@@ -1,1 +1,1 @@
-web: python ui/app.py
+web: python start.py
