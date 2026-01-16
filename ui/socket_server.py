@@ -1,0 +1,457 @@
+"""
+WebSocket server for Maxi AI
+Provides real-time updates and control through WebSockets
+"""
+import asyncio
+import json
+import logging
+import websockets
+from typing import Dict, Set, Any, Optional, Callable, Coroutine
+from datetime import datetime
+from common.enums import AppMode
+
+
+logger = logging.getLogger("ui.socket")
+
+
+class SocketServer:
+    """WebSocket server for real-time communication with the UI."""
+
+    MODE_TRANSITION_GRACE_PERIOD = 1.5  # seconds (now a class constant)
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
+        """
+        Initialize WebSocket server.
+
+        Args:
+            host: Host IP address to bind
+            port: Port number to use
+        """
+        self.host = host
+        self.port = port
+        self.clients: Set[websockets.WebSocketServerProtocol] = set()
+        self.server = None
+        self._ping_task = None
+        # Placeholder for dynamic injection
+        self.intent_router: Optional[Any] = None
+        self._listeners: Dict[str, asyncio.Queue] = {}
+        self.mode_change_callback = None  # Initialize mode change callback
+        self._last_mode_change_time = 0  # Track mode changes to prevent spurious triggers
+        self._mode_transition_grace_period = self.MODE_TRANSITION_GRACE_PERIOD
+        self._mode_lock = asyncio.Lock()
+        self.active_interaction = None  # Track current interaction
+
+    def set_intent_router(self, router):
+        print(f"Router: {router}\n")
+        self.intent_router = router
+
+    async def start(self):
+        """Start the WebSocket server."""
+        try:
+            self.server = await websockets.serve(
+                self._handle_client,
+                self.host,
+                self.port,
+                ping_interval=30,
+                ping_timeout=60
+            )
+            logger.info(
+                f"WebSocket server started on ws://{self.host}:{self.port}")
+        except Exception as e:
+            logger.error(f"Failed to start WebSocket server: {e}")
+            raise
+
+    async def stop(self):
+        """Stop the WebSocket server."""
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+            logger.info("WebSocket server stopped")
+        if self._ping_task:
+            self._ping_task.cancel()
+
+    async def clear_pending_messages(self, message_types: list[str]):
+        """
+        Clear any queued messages for the given types so they won't trigger stale events.
+        """
+        for m_type in message_types:
+            if m_type in self._listeners:
+                queue = self._listeners[m_type]
+                while not queue.empty():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                # Remove the listener entirely to prevent stale wake events
+                del self._listeners[m_type]
+        logger.info(f"Cleared pending messages for: {message_types}")
+
+    def set_mode_change_callback(self, callback: Callable):
+        """Set the callback for mode changes"""
+        self.mode_change_callback = callback
+
+    def _is_in_mode_transition_grace_period(self) -> bool:
+        """Check if we're in grace period after mode change to prevent spurious triggers"""
+        return (datetime.now().timestamp() - self._last_mode_change_time) < self._mode_transition_grace_period
+
+    async def _handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str = None):
+        """Handle client connections."""
+        self.clients.add(websocket)
+        client_id = id(websocket)
+        logger.info(f"Client connected: {client_id}")
+
+        try:
+            # Send initial connection confirmation
+            await self._send(websocket, {
+                "type": "connection_established",
+                "message": "Connected to Maxi AI",
+                "timestamp": datetime.now().isoformat()
+            })
+
+            # Handle incoming messages
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    await self._process_message(websocket, data)
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON from client {client_id}")
+                    await self._send(websocket, {
+                        "type": "error",
+                        "message": "Invalid JSON format"
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing message: {e}")
+
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"Client disconnected: {client_id}")
+        finally:
+            self.clients.remove(websocket)
+
+    # FIXED: Enhanced wait_for_message with better cleanup
+    async def wait_for_message(self, message_type: str, timeout: float = None):
+        """Wait for a specific message type with improved cleanup."""
+        # FIXED: Clean up any existing listener for this message type more aggressively
+        if message_type in self._listeners:
+            old_listener = self._listeners.pop(message_type)
+            # Drain any pending items
+            while not old_listener.empty():
+                try:
+                    old_listener.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            logger.info(f"🧹 Cleaned up existing listener for {message_type}")
+
+        queue = asyncio.Queue()
+        self._listeners[message_type] = queue
+
+        try:
+            if timeout:
+                result = await asyncio.wait_for(queue.get(), timeout=timeout)
+            else:
+                result = await queue.get()
+
+            logger.info(f"📨 Successfully received {message_type}")
+            return result
+
+        except asyncio.TimeoutError:
+            logger.warning(f"⏰ Timeout waiting for {message_type}")
+            raise
+        except asyncio.CancelledError:
+            logger.info(f"❌ Cancelled waiting for {message_type}")
+            raise
+        finally:
+            # FIXED: Always clean up the listener
+            if message_type in self._listeners:
+                del self._listeners[message_type]
+                logger.info(f"🧹 Cleaned up listener for {message_type}")
+
+    # FIXED: Socket server message processing with better listener management
+    async def _process_message(self, websocket: websockets.WebSocketServerProtocol, data: Dict):
+        """Process incoming message from frontend with improved transcription handling."""
+        message_type = data.get("type")
+
+        # FIXED: Priority routing for transcriptions
+        if message_type == "user_transcription":
+            transcription = data.get("text", "").strip()
+            confidence = data.get("confidence", 0.0)
+            logger.info(
+                f"🎤 Received transcription: '{transcription}' (confidence: {confidence:.2f})")
+
+            # FIXED: Always check for waiting listeners first
+            if "user_transcription" in self._listeners:
+                # Remove immediately to prevent duplicates
+                listener = self._listeners.pop("user_transcription")
+                try:
+                    await listener.put(data)
+                    logger.info(f"✅ Transcription routed to waiting listener")
+                    return  # Important: return early to prevent further processing
+                except Exception as e:
+                    logger.error(
+                        f"Failed to route transcription to listener: {e}")
+            else:
+                logger.warning("⚠️ No listener waiting for user_transcription")
+
+            return
+
+        # Handle other message types...
+        if message_type in self._listeners:
+            listener = self._listeners.pop(message_type)
+            await listener.put(data)
+            return
+
+        if message_type == "ping":
+            await self._send(websocket, {"type": "pong"})
+            return
+
+        # FIXED: Proper wake message routing
+        if message_type == "wake_word_detected":
+            if self._is_in_mode_transition_grace_period():
+                logger.info("Ignoring wake_word_detected during grace period")
+                return
+            logger.info("General chat wake triggered")
+            # Don't emit state change here - let the mode loop handle it
+            return
+
+        if message_type == "math_gesture_wake":
+            if self._is_in_mode_transition_grace_period():
+                logger.info("Ignoring math_gesture_wake during grace period")
+                return
+            logger.info("Math/Gesture wake triggered")
+            # Don't emit state change here - let the mode loop handle it
+            return
+
+        # Mode changes
+        if message_type == "set_mode":
+            mode = data.get("mode")
+            if not self.mode_change_callback:
+                logger.error("Mode change callback not set")
+                return
+
+            self._last_mode_change_time = datetime.now().timestamp()
+
+            await self.clear_pending_messages([
+                "wake_word_detected",
+                "math_gesture_wake",
+                "interrupted",
+                "user_transcription"
+            ])
+
+            if mode == "general_chat":
+                await self.emit_state_change("switching_to_general_chat")
+                asyncio.create_task(
+                    self.mode_change_callback(AppMode.GENERAL_CHAT))
+            elif mode == "math_gesture":
+                await self.emit_state_change("switching_to_math_gesture")
+                asyncio.create_task(
+                    self.mode_change_callback(AppMode.MATH_GESTURE))
+            elif mode == "idle":
+                await self.emit_state_change("switching_to_idle")
+                asyncio.create_task(self.mode_change_callback(AppMode.IDLE))
+
+            logger.info(f"Mode change requested: {mode}")
+            return
+
+        if message_type == "finger_pose_update":
+            # Handle finger pose updates from backend to frontend
+            pose = data.get("pose", {})
+            await self.broadcast({
+                "type": "finger_pose",
+                "pose": pose,
+                "timestamp": datetime.now().isoformat()
+            })
+            return
+
+        if message_type == "math_sequence_update":
+            # Handle math sequence updates
+            await self.broadcast({
+                "type": "math_sequence",
+                "stage": data.get("stage"),
+                "payload": data.get("payload", {}),
+                "timestamp": datetime.now().isoformat()
+            })
+            return
+
+        if message_type == "highlight_step":
+            # Handle step highlighting for advanced math
+            await self.broadcast({
+                "type": "highlight_step",
+                "step_number": data.get("step_number"),
+                "operation": data.get("operation", ""),
+                "result": data.get("result", ""),
+                "timestamp": datetime.now().isoformat()
+            })
+            return
+
+         # Handle immediate back button / navigation requests
+        if message_type == "back_to_menu":
+            logger.info(
+                "Back to menu requested - immediate mode switch to idle")
+            await self.emit_state_change("switching_to_idle")
+            if self.mode_change_callback:
+                # Set grace period
+                self._last_mode_change_time = datetime.now().timestamp()
+                # Clear pending messages
+                await self.clear_pending_messages([
+                    "wake_word_detected",
+                    "math_gesture_wake",
+                    "interrupted"
+                ])
+                asyncio.create_task(self.mode_change_callback(AppMode.IDLE))
+            return
+
+        if not message_type:
+            await self._send(websocket, {
+                "type": "error",
+                "message": "Missing message type"
+            })
+            return
+
+        logger.debug(f"Processing message type: {message_type}")
+
+        if not message_type:
+            await self._send(websocket, {
+                "type": "error",
+                "message": "Missing message type"
+            })
+            return
+
+        logger.debug(f"Processing message type: {message_type}")
+
+    # Add this method to the SocketServer class to handle enhanced state changes
+    async def emit_mode_switch_complete(self, mode: str):
+        """Emit when mode switch is fully complete."""
+        await self.broadcast({
+            "type": "mode_switch_complete",
+            "mode": mode,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def _send(self, websocket: websockets.WebSocketServerProtocol, data: Dict):
+        """Safe message sending with error handling."""
+        try:
+            await websocket.send(json.dumps(data))
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+
+    async def broadcast(self, data: Dict):
+        """
+        Broadcast data to all connected clients.
+        Iterates over a snapshot of the clients set to prevent
+        'Set changed size during iteration' errors when clients connect/disconnect.
+        """
+        if not self.clients:
+            return
+
+        disconnected = set()
+
+        # Iterate over a snapshot so modifications don't cause RuntimeError
+        for client in list(self.clients):
+            try:
+                await self._send(client, data)
+            except (websockets.exceptions.ConnectionClosed, Exception) as e:
+                logger.warning(f"Client disconnected during broadcast: {e}")
+                disconnected.add(client)
+
+        # Remove disconnected clients safely
+        self.clients.difference_update(disconnected)
+
+    # State Management API
+    async def emit_state_change(self, state: str, data: Dict = None):
+        """Emit a state change event."""
+        payload = {
+            "type": "state_change",
+            "state": state,
+            "timestamp": datetime.now().isoformat()
+        }
+        if data:
+            payload.update(data)
+        await self.broadcast(payload)
+
+    async def emit_transcription(self, text: str):
+        """Emit transcription text."""
+        await self.broadcast({
+            "type": "transcription",
+            "text": text,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_shutdown(self, text: str):
+        """Emit Shutdown text."""
+        await self.broadcast({
+            "type": "shutdown_confirm",
+            "text": text,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_response_start(self, stream_id: str = "default", initial_text: str = ""):
+        """Start a streaming response."""
+        await self.broadcast({
+            "type": "response",
+            "streaming": True,
+            "streamId": stream_id,
+            "text": initial_text,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_response_chunk(self, text: str, stream_id: str = "default"):
+        """Emit a response chunk."""
+        await self.broadcast({
+            "type": "response_chunk",
+            "streamId": stream_id,
+            "text": text,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_response_complete(self, stream_id: str = "default"):
+        """Complete a streaming response."""
+        await self.broadcast({
+            "type": "response_complete",
+            "streamId": stream_id,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_response(self, text: str):
+        """Emit a complete response (non-streaming)."""
+        await self.broadcast({
+            "type": "response",
+            "text": text,
+            "streaming": False,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_error(self, message: str):
+        """Emit error message."""
+        await self.broadcast({
+            "type": "error",
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def emit_event(self, event_type: str, data: Dict = None):
+        """Compatibility wrapper for emit_state_change."""
+        await self.emit_state_change(event_type, data)
+
+    async def emit_wake_word(self):
+        """Emit wake word detected event."""
+        await self.emit_state_change("wake", {
+            "greeting": {
+                "text": "Hello! How can I help you today?",
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+
+    async def emit_audio_chunk(self, audio_base64: str, audio_format: str = "mp3"):
+        """
+        Stream audio data to the client for playback.
+        Used for cloud-based TTS where server can't play audio.
+
+        Args:
+            audio_base64: Base64-encoded audio data
+            audio_format: Audio format (mp3, wav, etc.)
+        """
+        await self.broadcast({
+            "type": "audio_chunk",
+            "audio": audio_base64,
+            "format": audio_format,
+            "timestamp": datetime.now().isoformat()
+        })

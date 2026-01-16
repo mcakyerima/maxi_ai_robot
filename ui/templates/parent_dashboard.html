@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parent Dashboard - Maxi AI</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --glass: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.8);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background: var(--primary-gradient);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+            animation: backgroundFloat 20s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        @keyframes backgroundFloat {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        /* PIN Entry Screen */
+        #pin-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        #pin-screen.hidden {
+            display: none;
+        }
+
+        .pin-card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 2px solid var(--glass-border);
+            border-radius: 30px;
+            padding: 50px;
+            text-align: center;
+            box-shadow: var(--shadow);
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .pin-card h2 {
+            font-family: 'Fredoka One', cursive;
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .pin-card p {
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+        }
+
+        #pin-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.5rem;
+            text-align: center;
+            border: 2px solid var(--glass-border);
+            border-radius: 15px;
+            background: var(--glass);
+            color: var(--text-primary);
+            margin-bottom: 20px;
+            letter-spacing: 10px;
+        }
+
+        #pin-input:focus {
+            outline: none;
+            border-color: var(--text-primary);
+        }
+
+        .pin-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            border: none;
+            border-radius: 15px;
+            background: var(--success-gradient);
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .pin-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        #pin-error {
+            color: #f5576c;
+            margin-top: 10px;
+            display: none;
+        }
+
+        /* Dashboard Container */
+        #dashboard {
+            display: none;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        #dashboard.visible {
+            display: block;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 25px;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+            box-shadow: var(--shadow);
+        }
+
+        .logo {
+            font-family: 'Fredoka One', cursive;
+            font-size: 2rem;
+        }
+
+        .back-btn {
+            padding: 12px 25px;
+            background: var(--warning-gradient);
+            border: none;
+            border-radius: 15px;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .back-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        /* Section */
+        .section {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Topics List */
+        .topics-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .topic-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            transition: background 0.2s ease;
+        }
+
+        .topic-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .topic-name {
+            font-weight: 600;
+        }
+
+        .topic-count {
+            background: var(--success-gradient);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+
+        /* Safety Events */
+        .events-list {
+            display: grid;
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .event-item {
+            padding: 15px;
+            background: rgba(245, 87, 108, 0.1);
+            border-left: 4px solid #f5576c;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .event-time {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+
+        /* Loading State */
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading i {
+            font-size: 3rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        /* Fullscreen Overlay */
+        #fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(20, 20, 20, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            color: var(--text-primary);
+            text-align: center;
+            padding: 20px;
+        }
+
+        #fullscreen-overlay i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            color: var(--text-primary);
+        }
+
+        #fullscreen-overlay p {
+            font-size: 1.2rem;
+            margin: 10px 0 20px;
+            color: var(--text-secondary);
+        }
+
+        #enable-fullscreen {
+            padding: 15px 40px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            border: none;
+            border-radius: 50px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        #enable-fullscreen:hover {
+            transform: scale(1.05);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+
+        @media (min-width: 769px) and (max-width: 1024px) {
+            /* Tablet landscape - ensure 4 cards in a row */
+            .stats-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Fullscreen Overlay -->
+    <div id="fullscreen-overlay" style="display: none;">
+        <i class="fas fa-expand"></i>
+        <p>Parent Dashboard works best in fullscreen mode!</p>
+        <button id="enable-fullscreen">Enter Fullscreen</button>
+    </div>
+
+    <!-- PIN Entry Screen -->
+    <div id="pin-screen">
+        <div class="pin-card">
+            <h2>🔒 Parent Dashboard</h2>
+            <p>Enter your PIN to continue</p>
+            <input type="password" id="pin-input" maxlength="4" placeholder="••••" autocomplete="off">
+            <button class="pin-btn" onclick="verifyPIN()">Unlock Dashboard</button>
+            <p id="pin-error">Incorrect PIN. Please try again.</p>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">👨‍👩‍👧 Parent Dashboard</div>
+            <button class="back-btn" onclick="goBack()">
+                <i class="fas fa-arrow-left"></i> Back to Menu
+            </button>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-value" id="total-time">0m</div>
+                <div class="stat-label">Total Time Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">❓</div>
+                <div class="stat-value" id="total-questions">0</div>
+                <div class="stat-label">Questions Asked</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🧮</div>
+                <div class="stat-value" id="math-questions">0</div>
+                <div class="stat-label">Math Problems</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">💬</div>
+                <div class="stat-value" id="chat-questions">0</div>
+                <div class="stat-label">Chat Questions</div>
+            </div>
+        </div>
+
+        <!-- Learning Topics -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-book"></i> Learning Topics (This Week)
+            </div>
+            <div class="topics-list" id="topics-list">
+                <div class="loading">
+                    <i class="fas fa-spinner"></i>
+                    <p>Loading topics...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Safety Events -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-shield-alt"></i> Safety Events (Past 7 Days)
+            </div>
+            <div class="events-list" id="events-list">
+                <div class="loading">
+                    <i class="fas fa-spinner"></i>
+                    <p>Loading safety events...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // PIN verification
+        function verifyPIN() {
+            const pin = document.getElementById('pin-input').value;
+            const errorMsg = document.getElementById('pin-error');
+            
+            fetch('/api/parent-dashboard/verify-pin', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pin: pin})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('pin-screen').classList.add('hidden');
+                    document.getElementById('dashboard').classList.add('visible');
+                    loadDashboardData();
+                } else {
+                    errorMsg.style.display = 'block';
+                    document.getElementById('pin-input').value = '';
+                }
+            })
+            .catch(err => {
+                console.error('PIN verification failed:', err);
+                errorMsg.textContent = 'Error connecting to server';
+                errorMsg.style.display = 'block';
+            });
+        }
+
+        // Allow Enter key to submit PIN
+        document.getElementById('pin-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') verifyPIN();
+        });
+
+        // Load dashboard data
+        function loadDashboardData() {
+            loadTodayStats();
+            loadWeeklyTopics();
+            loadSafetyEvents();
+        }
+
+        function loadTodayStats() {
+            fetch('/api/parent-dashboard/today-stats')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('total-time').textContent = 
+                        data.total_time_minutes >= 60 
+                            ? `${Math.floor(data.total_time_minutes / 60)}h ${data.total_time_minutes % 60}m`
+                            : `${data.total_time_minutes}m`;
+                    document.getElementById('total-questions').textContent = data.total_questions;
+                    document.getElementById('math-questions').textContent = data.math_questions;
+                    document.getElementById('chat-questions').textContent = data.chat_questions;
+                })
+                .catch(err => console.error('Failed to load today stats:', err));
+        }
+
+        function loadWeeklyTopics() {
+            fetch('/api/parent-dashboard/weekly-topics')
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('topics-list');
+                    if (data.topics && data.topics.length > 0) {
+                        container.innerHTML = data.topics.map(topic => `
+                            <div class="topic-item">
+                                <div class="topic-name">${escapeHtml(topic.topic)}</div>
+                                <div class="topic-count">${topic.count}</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        container.innerHTML = '<div class="empty-state"><i class="fas fa-book-open"></i><p>No topics tracked yet</p></div>';
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load topics:', err);
+                    document.getElementById('topics-list').innerHTML = '<div class="empty-state"><p>Error loading topics</p></div>';
+                });
+        }
+
+        function loadSafetyEvents() {
+            fetch('/api/parent-dashboard/safety-events')
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('events-list');
+                    if (data.events && data.events.length > 0) {
+                        container.innerHTML = data.events.map(event => `
+                            <div class="event-item">
+                                <div><strong>${event.filter_type.toUpperCase()}</strong>: ${escapeHtml(event.reason)}</div>
+                                <div class="event-time">${new Date(event.timestamp).toLocaleString()}</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        container.innerHTML = '<div class="empty-state"><i class="fas fa-check-circle"></i><p>No safety events - All interactions have been appropriate! 🎉</p></div>';
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load safety events:', err);
+                    document.getElementById('events-list').innerHTML = '<div class="empty-state"><p>Error loading safety events</p></div>';
+                });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function goBack() {
+            window.location.href = '/';
+        }
+
+        // Fullscreen functionality
+        function checkFullscreen() {
+            if (!document.fullscreenElement) {
+                document.getElementById('fullscreen-overlay').style.display = 'flex';
+            }
+        }
+
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().then(() => {
+                    document.getElementById('fullscreen-overlay').style.display = 'none';
+                }).catch(err => {
+                    console.log('Fullscreen error:', err);
+                });
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+                document.getElementById('fullscreen-overlay').style.display = 'none';
+            }
+        }
+
+        // Check fullscreen on load
+        setTimeout(() => {
+            checkFullscreen();
+        }, 1000);
+
+        // Periodically check fullscreen status
+        setInterval(checkFullscreen, 1000);
+
+        // Fullscreen button click handler
+        document.getElementById('enable-fullscreen').addEventListener('click', enterFullscreen);
+
+        // Handle fullscreen change
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                setTimeout(checkFullscreen, 500);
+            }
+        });
+
+        // Auto-focus PIN input
+        document.getElementById('pin-input').focus();
+    </script>
+</body>
+</html>

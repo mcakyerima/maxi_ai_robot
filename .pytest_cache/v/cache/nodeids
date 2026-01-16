@@ -1,0 +1,11 @@
+[
+  "test_finger_controller_live.py::test_clear_hands",
+  "test_finger_controller_live.py::test_emergency_stop_and_reset",
+  "test_finger_controller_live.py::test_health",
+  "test_finger_controller_live.py::test_move_finger_both_hands",
+  "test_finger_controller_live.py::test_move_finger_valid",
+  "test_finger_controller_live.py::test_show_number_both_hands",
+  "test_finger_controller_live.py::test_show_number_invalid_hand",
+  "test_finger_controller_live.py::test_show_number_valid",
+  "test_finger_controller_live.py::test_status"
+]

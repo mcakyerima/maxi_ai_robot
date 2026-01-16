@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maxi Control Center</title>
+    
+    <!-- Kiosk Mode -->
+    <script type="module" src="/static/js/kiosk_mode.js"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts - Kid-friendly choices -->
+    <link href="https://fonts.googleapis.com/css2?family=Bubblegum+Sans&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- PWA Configuration -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#FF6B6B">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <style>
+        :root {
+            --primary: #00ffcc;
+            --secondary: #4ECDC4;
+            --accent: #FFE66D;
+            --dark: #292F36;
+            --light: #F7FFF7;
+            --highlight: #6BFFB8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Bubblegum Sans', cursive;
+            background-color: var(--dark);
+            color: var(--light);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(circle at 20% 30%, rgba(255, 107, 107, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 80% 70%, rgba(78, 205, 196, 0.1) 0%, transparent 20%);
+        }
+
+        /* Robot Header */
+        .robot-header {
+            text-align: center;
+            padding: 20px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .robot-face {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 15px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 
+                0 0 20px var(--primary),
+                inset 0 -10px 20px rgba(0,0,0,0.2);
+            position: relative;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .robot-eyes {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 10px;
+        }
+
+        .eye {
+            width: 25px;
+            height: 35px;
+            background: var(--light);
+            border-radius: 50%;
+            position: relative;
+            animation: blink 4s infinite;
+        }
+
+        @keyframes blink {
+            0%, 45%, 55%, 100% { height: 35px; }
+            50% { height: 5px; }
+        }
+
+        .robot-mouth {
+            width: 40px;
+            height: 15px;
+            background: var(--light);
+            border-radius: 0 0 20px 20px;
+            transition: all 0.3s;
+        }
+
+        .robot-title {
+            font-size: 2.5rem;
+            color: var(--accent);
+            text-shadow: 0 0 10px rgba(255, 230, 109, 0.5);
+            margin-bottom: 5px;
+            letter-spacing: 2px;
+        }
+
+        .robot-subtitle {
+            font-family: 'Roboto', sans-serif;
+            color: var(--secondary);
+            font-size: 1.2rem;
+            letter-spacing: 1px;
+        }
+
+        /* Menu Grid */
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 20px;
+            flex: 1;
+            align-content: center;
+        }
+
+        .menu-item {
+            background: rgba(41, 47, 54, 0.8);
+            border: 3px solid var(--primary);
+            border-radius: 20px;
+            padding: 25px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            backdrop-filter: blur(5px);
+        }
+
+        .menu-item:hover {
+            transform: translateY(-5px) scale(1.03);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            border-color: var(--highlight);
+        }
+
+        .menu-item::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                to bottom right,
+                transparent 45%,
+                rgba(107, 255, 184, 0.3) 50%,
+                transparent 55%
+            );
+            transform: rotate(30deg);
+            animation: shine 3s infinite;
+        }
+
+        @keyframes shine {
+            0% { transform: translateX(-100%) rotate(30deg); }
+            100% { transform: translateX(100%) rotate(30deg); }
+        }
+
+        .menu-icon {
+            font-size: 3.5rem;
+            margin-bottom: 15px;
+            color: var(--accent);
+            text-shadow: 0 0 10px rgba(255, 230, 109, 0.5);
+        }
+
+        .menu-title {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: var(--light);
+        }
+
+        .menu-desc {
+            font-family: 'Roboto', sans-serif;
+            color: rgba(247, 255, 247, 0.8);
+            font-size: 1rem;
+        }
+
+        /* Robot Footer */
+        .robot-footer {
+            text-align: center;
+            padding: 15px;
+            font-family: 'Roboto', sans-serif;
+            color: rgba(247, 255, 247, 0.6);
+            font-size: 0.9rem;
+            border-top: 1px solid rgba(255, 107, 107, 0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .battery {
+            width: 40px;
+            height: 20px;
+            border: 2px solid var(--secondary);
+            border-radius: 3px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .battery-level {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            bottom: 2px;
+            width: 80%;
+            background: var(--secondary);
+            border-radius: 1px;
+            animation: battery-pulse 3s infinite;
+        }
+
+        .battery-tip {
+            position: absolute;
+            right: -6px;
+            top: 5px;
+            width: 4px;
+            height: 8px;
+            background: var(--secondary);
+            border-radius: 0 2px 2px 0;
+        }
+
+        @keyframes battery-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* Fullscreen fix */
+        #fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            color: white;
+            font-size: 1.5rem;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #fullscreen-overlay button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            margin-top: 20px;
+            cursor: pointer;
+            font-family: 'Bubblegum Sans', cursive;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .menu-grid {
+                grid-template-columns: 1fr;
+                padding: 10px;
+            }
+            
+            .robot-title {
+                font-size: 2rem;
+            }
+            
+            .robot-subtitle {
+                font-size: 1rem;
+            }
+        }
+
+        /* Kiosk mode styles */
+        body.kiosk-mode {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="kiosk-mode">
+    <!-- Fullscreen overlay (initially hidden) -->
+    <div id="fullscreen-overlay" style="display: none;">
+        <i class="fas fa-expand" style="font-size: 3rem; margin-bottom: 20px;"></i>
+        <p>Maxi works best in fullscreen mode!</p>
+        <button id="enable-fullscreen">Enter Fullscreen</button>
+    </div>
+
+    <!-- Robot Header -->
+    <div class="robot-header">
+        <div class="robot-face" id="robot-face">
+            <div class="robot-eyes">
+                <div class="eye"></div>
+                <div class="eye"></div>
+            </div>
+            <div class="robot-mouth"></div>
+        </div>
+        <h1 class="robot-title">MAXI ROBOT</h1>
+        <p class="robot-subtitle">Your Smart Learning Buddy</p>
+    </div>
+
+    <!-- Menu Grid -->
+    <div class="menu-grid">
+        <div class="menu-item" onclick="navigateTo('settings')">
+            <i class="fas fa-robot menu-icon"></i>
+            <h2 class="menu-title">Robot Settings</h2>
+            <p class="menu-desc">Tune up Maxi's hardware and calibration</p>
+        </div>
+
+        <div class="menu-item" onclick="navigateTo('chat')">
+            <i class="fas fa-comments menu-icon"></i>
+            <h2 class="menu-title">Talk With Maxi</h2>
+            <p class="menu-desc">Chat with your robot friend</p>
+        </div>
+
+        <div class="menu-item" onclick="navigateTo('math')">
+            <i class="fas fa-calculator menu-icon"></i>
+            <h2 class="menu-title">Math Fun</h2>
+            <p class="menu-desc">Learn math with cool gestures</p>
+        </div>
+    </div>
+
+    <!-- Robot Footer -->
+    <div class="robot-footer">
+        <span>MAXI v2.0</span>
+        <div class="battery">
+            <div class="battery-level"></div>
+            <div class="battery-tip"></div>
+        </div>
+        <span>© 2025 MaxiRobot Inc.</span>
+    </div>
+
+    <script>
+        // Improved fullscreen handling
+        function checkFullscreen() {
+            if (!document.fullscreenElement) {
+                document.getElementById('fullscreen-overlay').style.display = 'flex';
+            }
+        }
+
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().then(() => {
+                    document.getElementById('fullscreen-overlay').style.display = 'none';
+                }).catch(err => {
+                    console.log('Fullscreen error:', err);
+                });
+            }
+        }
+
+        // Request fullscreen on first interaction
+        document.addEventListener('click', function firstInteraction() {
+            enterFullscreen();
+            document.removeEventListener('click', firstInteraction);
+        });
+
+        // Check fullscreen state periodically
+        setInterval(checkFullscreen, 1000);
+
+        // Fullscreen button
+        document.getElementById('enable-fullscreen').addEventListener('click', enterFullscreen);
+
+        // Monitor fullscreen changes
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                checkFullscreen();
+            }
+        });
+
+        // Navigation function
+        function navigateTo(page) {
+            switch(page) {
+                case 'settings':
+                    window.location.href = '/settings';
+                    break;
+                case 'chat':
+                    window.location.href = '/chat';
+                    break;
+                case 'math':
+                    window.location.href = '/math';
+                    break;
+            }
+        }
+
+        // Hidden Parent Dashboard Access (tap robot face 5 times)
+        let tapCount = 0;
+        let tapTimeout = null;
+        
+        document.getElementById('robot-face').addEventListener('click', function() {
+            tapCount++;
+            
+            // Visual feedback
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 100);
+            
+            // Reset counter after 3 seconds of inactivity
+            clearTimeout(tapTimeout);
+            tapTimeout = setTimeout(() => {
+                tapCount = 0;
+            }, 3000);
+            
+            // After 5 taps, navigate to parent dashboard
+            if (tapCount === 5) {
+                tapCount = 0;
+                
+                // Special animation
+                this.style.animation = 'none';
+                setTimeout(() => {
+                    this.style.animation = 'float 3s ease-in-out infinite, dashboardUnlock 0.5s ease';
+                    
+                    // Navigate after animation
+                    setTimeout(() => {
+                        window.location.href = '/parent-dashboard';
+                    }, 500);
+                }, 10);
+            }
+        });
+        
+        // Add unlock animation to stylesheet
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes dashboardUnlock {
+                0% { transform: scale(1) rotate(0deg); }
+                25% { transform: scale(1.1) rotate(-10deg); }
+                50% { transform: scale(1.2) rotate(10deg); }
+                75% { transform: scale(1.1) rotate(-10deg); }
+                100% { transform: scale(1) rotate(0deg); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                .then(registration => {
+                    console.log('SW registered: ', registration);
+                }).catch(registrationError => {
+                    console.log('SW registration failed: ', registrationError);
+                });
+            });
+        }
+
+        // Disable context menu
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        // Disable zoom gestures
+        document.addEventListener('gesturestart', (e) => {
+            e.preventDefault();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.env
+.venv
+venv/
+ENV/
+env/
+
+# Database (Railway will create fresh)
+*.db
+context_memory.db
+
+# Logs
+*.log
+logs/
+shutdown_logs/
+
+# Cache
+intent_cache/
+
+# Large model files (too big for git)
+vosk-model-*/
+ollama_models/
+piper/
+*.ppn
+Hey-Maxi_en_windows_v3_0_0.ppn
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime calibration files
+hand_calibration.json
+hand_state.json
+
+# Local development requirements
+requirements_local.txt
+requirements_full.txt

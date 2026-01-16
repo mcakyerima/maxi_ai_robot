@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, orientation=landscape">
+    <title>Maxi Math Adventure</title>
+    <!-- Kiosk Mode -->
+    <script type="module" src="/static/js/kiosk_mode.js"></script>
+
+    <!-- Session Timer for Parental Controls -->
+    <script src="/static/js/session_timer.js"></script>
+
+    <!-- PWA Configuration -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --surface: rgba(255, 255, 255, 0.1);
+            --surface-hover: rgba(255, 255, 255, 0.2);
+            --glass: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.8);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --shadow-hover: 0 12px 48px rgba(0, 0, 0, 0.4);
+
+            --primary: var(--glass);
+            --secondary: var(--glass-border);
+            --accent: var(--text-primary);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background: var(--primary-gradient);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animated Background */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+            animation: backgroundFloat 20s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        @keyframes backgroundFloat {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        #fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(20, 20, 20, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            color: var(--text-primary);
+            text-align: center;
+            padding: 20px;
+        }
+
+        #fullscreen-overlay i {
+            color: var(--text-primary);
+        }
+
+        #fullscreen-overlay p {
+            font-size: 1.2rem;
+            margin: 10px 0 20px;
+            color: var(--text-secondary);
+        }
+
+
+        /* Layout */
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            gap: 20px;
+            padding: 20px;
+            overflow:hidden;
+        }
+
+        .fade-in {
+            opacity: 0;
+            transition: opacity 0.6s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+        }
+
+        .fade-out {
+            opacity: 1;
+            transition: opacity 0.5s ease;
+        }
+        .fade-out.hidden {
+            opacity: 0;
+        }
+
+        /* Fade & Slide In */
+        .reveal {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 25px;
+            padding: 15px 30px;
+            box-shadow: var(--shadow);
+        }
+
+        .logo {
+            font-family: 'Fredoka One', cursive;
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #fff, #f0f8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .back-button {
+            background: var(--warning-gradient);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 20px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        /* Left Panel - Controls */
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .voice-control {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 25px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .mic-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: var(--success-gradient);
+            border: none;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .mic-button:active {
+            transform: scale(0.95);
+        }
+
+        .mic-button i {
+            font-size: 3rem;
+            color: white;
+            z-index: 2;
+        }
+
+        button[disabled] {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .fa-spinner {
+            margin-right: 8px;
+        }
+
+        .fa-spinner {
+            margin-right: 8px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .mic-button.listening {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .mic-button.listening::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            animation: ripple 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(56, 239, 125, 0.7); }
+            50% { box-shadow: 0 0 0 20px rgba(56, 239, 125, 0); }
+        }
+
+        @keyframes ripple {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+
+        .voice-status {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .voice-hint {
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        /* Center Panel - Display */
+        .main-display {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow: hidden;
+            height: 100%;
+        }
+
+
+        .math-display {
+            background: var(--glass);
+            min-height: 0; /* Allow flex to shrink */
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 25px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: var(--shadow);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto; /* Enable scrolling only here */
+            overscroll-behavior: contain; /* Prevent scroll chaining */
+    }
+        
+
+        .math-equation {
+            font-family: 'Fredoka One', cursive;
+            font-size: 4rem;
+            margin-bottom: 20px;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .math-operand, .math-operator, .math-result {
+            display: inline-block;
+            animation: fadeInScale 0.5s ease-out;
+        }
+
+        .math-operator {
+            color: #f093fb;
+        }
+
+        .math-result {
+            color: #38ef7d;
+        }
+
+        @keyframes fadeInScale {
+            0% { opacity: 0; transform: scale(0.5); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .explanation {
+            font-size: 1.4rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        /* Advanced Math Display */
+        .math-display.advanced-mode {
+            overflow-y: auto;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+        }
+
+        .math-display.advanced-mode::-webkit-scrollbar {
+            display: none; /* Chrome/Safari */
+        }
+
+        .advanced-math-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-height: 100%;
+        }
+
+        .advanced-problem {
+            font-family: 'Fredoka One', cursive;
+            font-size: 2rem; /* Smaller than basic math's 4rem */
+            color: #f093fb;
+            margin-bottom: 15px;
+        }
+
+        .advanced-result {
+            font-size: 2.5rem; /* Reduced from original */
+            font-weight: 700;
+            color: #38ef7d;
+            margin: 15px 0;
+        }
+
+        .steps-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin: 15px 0;
+        }
+
+        .step-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 12px 20px;
+            border-left: 4px solid #f093fb;
+            transition: all 0.3s ease;
+        }
+
+        .step-item.highlighted {
+            background: rgba(240, 147, 251, 0.2);
+            border-left-color: #38ef7d;
+            transform: scale(1.02);
+        }
+
+        .step-number {
+            font-weight: 700;
+            color: #f093fb;
+            margin-right: 8px;
+        }
+
+        .step-operation {
+            font-family: 'Fredoka One', cursive;
+            font-size: 1.2rem;
+            color: white;
+            margin: 0 8px;
+        }
+
+        .step-result {
+            font-weight: 600;
+            color: #38ef7d;
+        }
+
+        .breakdown-display {
+            background: rgba(56, 239, 125, 0.1);
+            border-radius: 15px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid rgba(56, 239, 125, 0.3);
+        }
+
+        .breakdown-text {
+            font-family: 'Fredoka One', cursive;
+            font-size: 1.4rem;
+            color: #38ef7d;
+            text-align: center;
+        }
+
+        /* Right Panel - Hand Visualization */
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .hand-display {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 25px;
+            padding: 14px;
+            box-shadow: var(--shadow);
+            flex: 1;
+        }
+
+        .hands-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            height: 100%;
+        }
+
+        .hand {
+            width: 96px;
+            height: 150px;
+            position: relative;
+        }
+
+        .hand-label {
+            text-align: center;
+            font-weight: 700;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+
+            /* Fingers container inside palm */
+        .fingers {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            height: 120px;
+            position: relative;
+            z-index: 2; /* Fingers stay above palm */
+        }
+
+        /* Palm shape */
+        .palm {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 70px;
+            background: var(--surface);
+            border-radius: 40px 40px 20px 20px;
+            box-shadow: inset 0 -2px 4px rgba(0,0,0,0.1);
+            z-index: 1;
+        }
+
+        /* Right palm (your exact chosen settings) */
+        #rightHandPalm {
+        position: absolute;
+        bottom: -39px;
+        left: 42%;
+        transform: translateX(-52%);
+        width: 76px;
+        height: 55px;
+        background: var(--warning-gradient);
+        border: none;
+        box-shadow: var(--shadow);
+        border-radius: 40px 40px 20px 20px;
+        z-index: 1;
+        }
+
+        /* Left palm (mirrored horizontally) */
+        #leftHandPalm {
+        position: absolute;
+        bottom: -39px;
+        right: 42%;
+        transform: translateX(-38%);
+        width: 76px;
+        height: 55px;
+                background: var(--warning-gradient);
+
+        border: none;
+        box-shadow: var(--shadow);
+        border-radius: 40px 40px 20px 20px;
+        z-index: 1;
+        }
+
+
+        /* Base finger style */
+        .finger {
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            border-radius: 10px 10px 5px 5px;
+            transition: all 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            margin: 0 3px; /* Gap between fingers */
+        }
+
+        /* Animated fill */
+        .finger::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 0%;
+            background: var(--success-gradient);
+            border-radius: inherit;
+            transition: height 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+        .finger.up::after {
+            height: 100%;
+        }
+
+        /* Finger sizing */
+        .finger.thumb { width: 28px; height: 60px; border-radius: 15px; }
+        .finger.index { width: 20px; height: 90px; }
+        .finger.middle { width: 20px; height: 100px; }
+        .finger.ring { width: 20px; height: 90px; }
+        .finger.pinky { width: 18px; height: 75px; }
+
+        /* Left hand layout */
+        #leftHand {
+            flex-direction: row; /* Thumb first */
+        }
+        #leftHand .finger.thumb {
+            transform: rotate(-15deg) translateY(5px);
+            transform-origin: top right;
+        }
+
+        /* Right hand layout */
+        #rightHand {
+            flex-direction: row-reverse; /* Thumb last */
+        }
+        #rightHand .finger.thumb {
+            transform: rotate(15deg) translateY(5px);
+            transform-origin: top left;
+        }
+
+        /* Spacing for thumbs */
+        #leftHand .finger.thumb,
+        #rightHand .finger.thumb {
+            margin-right: 6px;
+            margin-left: 6px;
+        }
+        /* End of Finger animations */
+
+        /* Status Display */
+        .status-display {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            text-align: center;
+        }
+
+        .status-text {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .connection-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4757;
+            animation: blink 2s ease-in-out infinite;
+        }
+
+        .status-dot.connected {
+            background: #38ef7d;
+            animation: none;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Loading States */
+        .loading-spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #38ef7d;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Celebration Effects */
+        .celebration {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #f093fb;
+            animation: confettiFall 3s linear infinite;
+        }
+
+        @keyframes confettiFall {
+            0% {
+                transform: translateY(-100vh) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* Error States */
+        .error-message {
+            background: var(--warning-gradient);
+            border-radius: 15px;
+            padding: 15px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: 600;
+            animation: slideInDown 0.5s ease-out;
+        }
+
+        @keyframes slideInDown {
+            0% { transform: translateY(-20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr auto auto;
+            }
+            
+            .left-panel, .right-panel {
+                grid-column: 1;
+            }
+
+            .left-panel, .right-panel {
+            height: calc(100vh - 40px); /* Account for header padding */
+            overflow: hidden;
+        }
+            
+            .math-equation {
+                font-size: 3rem;
+            }
+        }
+
+        /* Accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* Focus States */
+        button:focus {
+            outline: 3px solid rgba(255, 255, 255, 0.5);
+            outline-offset: 2px;
+        }
+
+        /* Advanced Math Mode */
+        .advanced-mode {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 25px;
+            padding: 30px;
+            box-shadow: var(--shadow);
+            text-align: center;
+        }
+
+        .advanced-result {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #f093fb;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body class="kiosk-mode">
+     <!-- Fullscreen overlay -->
+    <div id="fullscreen-overlay" style="display: none;">
+        <i class="fas fa-expand" style="font-size: 3rem; margin-bottom: 20px;"></i>
+        <p>Maxi works best in fullscreen mode!</p>
+        <button id="enable-fullscreen" class="back-button">Enter Fullscreen</button>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">🧮 Maxi Math Adventure</div>
+            <button id="backButton" class="back-button">
+                <i class="fas fa-arrow-left"></i>
+                Back to Menu
+            </button>
+        </div>
+
+        <!-- Left Panel - Voice Controls -->
+        <div class="left-panel">
+            <div class="voice-control">
+                <button id="micButton" class="mic-button">
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <div id="voiceStatus" class="voice-status">Ready to Listen!</div>
+                <div class="voice-hint">Ask me any math question</div>
+            </div>
+
+            <div class="status-display">
+                <div id="statusText" class="status-text">Ready to Calculate!</div>
+                <div class="connection-indicator">
+                    <div id="statusDot" class="status-dot"></div>
+                    <span id="connectionStatus">Connecting...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel - Math Display -->
+        <div class="main-display">
+            <div class="math-display">
+                <div id="mathEquation" class="math-equation">
+                    <span class="math-welcome">🤔 Ask me a math question!</span>
+                </div>
+                <div id="explanation" class="explanation">
+                    I can show finger counting for numbers 0-10, or solve any math problem!
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Hand Visualization -->
+        <div class="right-panel">
+            <div class="hand-display">
+                <div class="hands-container">
+                    <div class="hand">
+                        <div class="hand-label">Left Hand</div>
+                        <div class="palm" id="leftHandPalm"></div>
+                        <div class="fingers" id="leftHand">
+                            <div class="finger thumb"></div>
+                            <div class="finger index"></div>
+                            <div class="finger middle"></div>
+                            <div class="finger ring"></div>
+                            <div class="finger pinky"></div>
+                        </div>
+                    </div>
+
+                    <div class="hand">
+                        <div class="hand-label">Right Hand</div>
+                        <div class="palm" id="rightHandPalm"></div>
+                        <div class="fingers" id="rightHand">
+                            <div class="finger thumb"></div>
+                            <div class="finger index"></div>
+                            <div class="finger middle"></div>
+                            <div class="finger ring"></div>
+                            <div class="finger pinky"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Celebration Effects Container -->
+    <div id="celebration" class="celebration"></div>
+
+    <script>
+        function checkFullscreen() {
+            if (!document.fullscreenElement) {
+                document.getElementById('fullscreen-overlay').style.display = 'flex';
+            }
+        }
+
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().then(() => {
+                    document.getElementById('fullscreen-overlay').style.display = 'none';
+                }).catch(err => {
+                    console.log('Fullscreen error:', err);
+                });
+            }
+        }
+
+        document.addEventListener('click', function firstInteraction() {
+            enterFullscreen();
+            document.removeEventListener('click', firstInteraction);
+        });
+
+        setInterval(checkFullscreen, 1000);
+
+        document.getElementById('enable-fullscreen').addEventListener('click', enterFullscreen);
+
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                checkFullscreen();
+            }
+        });
+
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+        document.addEventListener('gesturestart', (e) => e.preventDefault());
+    </script>
+
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(console.error);
+        }
+    </script>
+
+    <!-- Cloud Audio Player Script -->
+    <script src="/static/js/audio_player.js"></script>
+
+    <!-- Main Application Script -->
+    <script>
+        class MathPWA {
+            constructor() {
+                this.socket = null;
+                this.isConnected = false;
+                this.currentStage = 'idle';
+                this.currentProblem = null;
+                this.GRACE_PERIOD_MS = 1500; // Matches server's 1.5s grace period
+                
+                // DOM Elements
+                this.micButton = document.getElementById('micButton');
+                this.voiceStatus = document.getElementById('voiceStatus');
+                this.statusText = document.getElementById('statusText');
+                this.statusDot = document.getElementById('statusDot');
+                this.connectionStatus = document.getElementById('connectionStatus');
+                this.mathEquation = document.getElementById('mathEquation');
+                this.explanation = document.getElementById('explanation');
+                this.leftHand = document.getElementById('leftHand');
+                this.rightHand = document.getElementById('rightHand');
+                this.backButton = document.getElementById('backButton');
+                this.celebration = document.getElementById('celebration');
+                // Initialize Web Speech transcriber
+                this.transcriber = new WebSpeechTranscriber(null); // Will be set after socket init
+                
+                // Initialize audio player for cloud TTS
+                this.audioPlayer = new SimpleAudioPlayer();
+                this.audioPlayer.initialize();
+                
+                // Listen for audio completion to auto-start microphone
+                this.audioPlayer.onAudioComplete = () => {
+                    console.log('🎵 Audio finished, checking if we should start mic...');
+                    // Only auto-start mic if we're in listening state and not already listening
+                    if (this.currentStage === 'listening' && !this.transcriber.isListening) {
+                        console.log('✅ Auto-starting microphone after audio');
+                        this.transcriber.startListening().then(started => {
+                            if (started) {
+                                console.log('Microphone started successfully');
+                            } else {
+                                console.error('Failed to start microphone');
+                            }
+                        });
+                    }
+                };
+
+                this.init();
+            }
+
+            async init() {
+                this.setupEventListeners();
+                this.initWebSocket();
+                this.requestFullscreen();
+                this.setLandscapeOrientation();
+            }
+
+            setupEventListeners() {
+                // FIXED: Enhanced mic button handler with better state management
+                this.micButton.addEventListener('click', async () => {
+                    if (!this.isConnected) {
+                        this.showError('Not connected to server');
+                        return;
+                    }
+
+                    // Handle different states
+                    if (this.currentStage === 'speaking') {
+                        // User wants to interrupt speaking
+                        console.log('🛑 User interrupted speaking');
+                        this.socket.send(JSON.stringify({
+                            type: "interrupted",
+                            timestamp: new Date().toISOString()
+                        }));
+                        return;
+                    }
+
+                    // Prevent multiple rapid clicks
+                    if (this.micButton.disabled) {
+                        console.log('⚠️ Mic button already processing, ignoring click');
+                        return;
+                    }
+
+                    // Disable button temporarily
+                    this.micButton.disabled = true;
+                    this.micButton.innerHTML = '<div class="loading-spinner"></div>';
+
+                    // Reset UI state
+                    this.resetUIState();
+                    
+                    // Reset scroll position if in advanced mode
+                    const mathDisplay = document.querySelector('.math-display');
+                    if (mathDisplay) {
+                        mathDisplay.scrollTop = 0;
+                    }
+
+                    try {
+                        // Send wake signal to server
+                        this.socket.send(JSON.stringify({
+                            type: "math_gesture_wake",
+                            timestamp: new Date().toISOString()
+                        }));
+                        
+                        console.log('📡 Wake signal sent to server');
+                    } catch (error) {
+                        console.error('Failed to send wake signal:', error);
+                        this.showError('Failed to send wake signal');
+                    }
+
+                    // Re-enable button after short delay
+                    setTimeout(() => {
+                        if (this.micButton.disabled) {
+                            this.micButton.disabled = false;
+                            this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                        }
+                    }, 2000);
+                });
+
+
+                // Back button with proper mode reset and state cleanup
+                this.backButton.addEventListener('click', () => {
+                    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                        // Visual feedback
+                        this.backButton.disabled = true;
+                        this.backButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exiting...';
+                        
+                        // Send special back_to_menu message instead of set_mode
+                        this.socket.send(JSON.stringify({
+                            type: "back_to_menu",
+                            timestamp: new Date().toISOString()
+                        }));
+                        
+                        // Navigate immediately without delay
+                        window.location.href = "/";
+                    } else {
+                        // Fallback if WebSocket isn't available
+                        window.location.href = "/";
+                    }
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        this.micButton.click();
+                    }
+                });
+            }
+
+            initWebSocket() {
+                const wsUrl = `ws://${location.hostname}:8765`;
+                
+                try {
+                    this.socket = new WebSocket(wsUrl);
+                    
+                    this.socket.onopen = () => {
+                        console.log('WebSocket connected');
+                        this.isConnected = true;
+                        this.updateConnectionStatus(true);
+                        
+                        // Set math_gesture mode
+                        this.socket.send(JSON.stringify({
+                            type: "set_mode",
+                            mode: "math_gesture"
+                        }));
+                        
+                        // Start ping interval
+                        this.pingInterval = setInterval(() => {
+                            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                                this.socket.send(JSON.stringify({ type: "ping" }));
+                            }
+                        }, 30000);
+
+                        // Set socket reference for transcriber
+                        this.transcriber.socket = this.socket;
+                    };
+                    
+                    this.socket.onmessage = (event) => {
+                        this.handleMessage(JSON.parse(event.data));
+                    };
+                    
+                    this.socket.onclose = () => {
+                        console.log('WebSocket disconnected');
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                        clearInterval(this.pingInterval);
+                        this.reconnect();
+                    };
+                    
+                    this.socket.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.showError('Connection error');
+                    };
+                    
+                } catch (error) {
+                    console.error('Failed to create WebSocket:', error);
+                    this.showError('Failed to connect');
+                    this.reconnect();
+                }
+            }
+
+            reconnect() {
+                setTimeout(() => {
+                    if (!this.isConnected) {
+                        this.initWebSocket();
+                    }
+                }, 2000);
+            }
+
+            disableControls() {
+                if (this.micButton) this.micButton.disabled = true;
+                // Add other controls you want to disable
+            }
+
+            enableControls() {
+                if (this.micButton) {
+                    this.micButton.disabled = false;
+                    this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                }
+                // Re-enable other controls
+            }
+
+            resetUIState() {
+                const mathDisplay = this.mathEquation.parentElement;
+                mathDisplay.classList.remove('advanced-mode');
+
+                // Reset scroll position for .math-display
+                const mathDisplayContainer = document.querySelector('.math-display');
+                if (mathDisplayContainer) {
+                    mathDisplayContainer.scrollTop = 0;
+                }
+
+                this.mathEquation.innerHTML = `
+                    <span class="math-welcome">🤔 Ask me a math question!</span>
+                `;
+
+                const outsideExplanation = document.getElementById('explanation');
+                if (outsideExplanation) {
+                    outsideExplanation.textContent = 'I can show finger counting for numbers 0-10, or solve any math problem!';
+                    outsideExplanation.style.display = '';
+                    outsideExplanation.classList.remove('fade-in', 'visible');
+                }
+
+                if (outsideExplanation) {
+                    outsideExplanation.textContent = 'I can show finger counting for numbers 0-10, or solve any math problem!';
+                    outsideExplanation.style.display = '';
+                    outsideExplanation.classList.remove('fade-out', 'hidden', 'fade-in', 'visible');
+                }
+
+
+                if (this.backButton) {
+                    this.backButton.innerHTML = '<i class="fas fa-arrow-left"></i> Back to Menu';
+                    this.backButton.disabled = false;
+                }
+
+                // Remove advanced highlightStep override if it exists
+                delete this.highlightStep;
+
+                // Clear fingers
+                this.clearFingers();
+            }
+
+
+            handleMessage(data) {
+                console.log('Received message:', data);
+                
+                switch (data.type) {
+                    case 'state_change':
+                        this.handleStateChange(data.state, data);
+                        break;
+                    case 'math_result':
+                        this.handleMathResult(data);
+                        break;
+                    case 'highlight_step':
+                        this.highlightStep(data.step_number);
+                        break;
+                    case 'finger_pose':
+                        this.updateFingerPose(data.pose);
+                        break;
+                    case 'transcription':
+                        this.handleTranscription(data.text);
+                        break;
+                    case 'audio_chunk':
+                        this.handleAudioChunk(data);
+                        break;
+                    case 'error':
+                        this.showError(data.message);
+                        break;
+                    case 'math_sequence':
+                        this.handleMathSequence(data);
+                        break;
+                }
+            }
+
+            handleAudioChunk(data) {
+                console.log('🔊 Received audio chunk');
+                try {
+                    // Play audio using the audio player
+                    this.audioPlayer.playAudio(data.audio, data.format || 'mp3');
+                } catch (error) {
+                    console.error('❌ Audio playback failed:', error);
+                }
+            }
+
+            // FIXED: Better state change handler
+            // FIXED: State change handler with proper UI updates
+            handleStateChange(state, data) {
+                this.currentStage = state;
+                console.log('State changed to:', state);
+                
+                switch (state) {
+                    case 'math_gesture_active':
+                        this.updateVoiceStatus('Ready to Listen!', false);
+                        this.updateStatus('Ready to Calculate!');
+                        this.enableControls();
+                        // FIXED: Ensure mic button is properly reset
+                        this.micButton.disabled = false;
+                        this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                        break;
+                        
+                    case 'speaking':
+                        this.updateVoiceStatus('Speaking...', false);
+                        this.updateStatus('Listen to my greeting...');
+                        this.micButton.innerHTML = '<i class="fas fa-hand-paper"></i>';
+                        this.micButton.disabled = false; // Allow interruption during speaking
+                        
+                        // Ensure transcriber is stopped
+                        if (this.transcriber.isListening) {
+                            this.transcriber.stopListening();
+                        }
+                        break;
+                        
+                    case 'listening':
+                        this.updateVoiceStatus('Listening...', true);
+                        this.updateStatus('Ask me a math question...');
+                        this.micButton.disabled = false;
+                        this.micButton.innerHTML = '<i class="fas fa-microphone listening"></i>';
+                        
+                        // DO NOT auto-start mic here - wait for audio to finish
+                        // The audioPlayer.onAudioComplete callback will start the mic
+                        console.log('📡 Listening state active, waiting for audio to complete...');
+                        
+                        // Only start mic if no audio is playing
+                        if (!this.audioPlayer.isPlaying) {
+                            console.log('✅ No audio playing, starting mic immediately');
+                            setTimeout(() => {
+                                if (this.currentStage === 'listening' && !this.transcriber.isListening) {
+                                    this.transcriber.startListening().then(started => {
+                                        if (started) {
+                                            console.log('Transcription started successfully');
+                                        } else {
+                                            this.showError('Could not start voice recognition');
+                                            this.updateVoiceStatus('Ready to Listen!', false);
+                                            this.updateStatus('Ready to Calculate!');
+                                            this.micButton.disabled = false;
+                                            this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                                        }
+                                    });
+                                }
+                            }, 100);
+                        }
+                        break;
+                        
+                    case 'processing':
+                        this.updateVoiceStatus('Processing...', false);
+                        this.updateStatus('Solving your math problem...');
+                        this.micButton.innerHTML = '<div class="loading-spinner"></div>';
+                        this.micButton.disabled = true;
+                        
+                        // Stop listening immediately
+                        if (this.transcriber.isListening) {
+                            this.transcriber.stopListening();
+                        }
+                        break;
+                        
+                    case 'show_operand_a':
+                        this.updateStatus('Showing first number...');
+                        break;
+                        
+                    case 'show_operand_b':  
+                        this.updateStatus('Showing second number...');
+                        break;
+                        
+                    case 'show_result':
+                        this.updateStatus('Here\'s the answer!');
+                        this.triggerCelebration();
+                        break;
+                        
+                    case 'idle':
+                        this.clearFingers();
+                        this.resetUIState();
+                        break;
+                }
+            }
+            handleMathResult(data) {
+                const { A, B, OP, result, explanation, mode } = data;
+                this.currentProblem = data;
+                
+                if (mode === 'finger_counting' && A <= 10 && B <= 10 && result <= 10) {
+                    // Basic math with finger visualization
+                    this.displayMathEquation(A, OP, B, result);
+                    this.updateExplanation(explanation);
+                    this.startFingerSequence(data);
+                } else {
+                    // Advanced math without finger visualization
+                    this.displayAdvancedMath(data);
+                    this.clearFingers();
+                }
+            }
+
+            displayMathEquation(A, OP, B, result) {
+                const operatorSymbols = {
+                    '+': '+', 'plus': '+',
+                    '-': '−', 'minus': '−',
+                    '*': '×', 'times': '×',
+                    '/': '÷', 'divided by': '÷'
+                };
+                const symbol = operatorSymbols[OP] || OP;
+                
+                this.mathEquation.innerHTML = `
+                    <span class="math-operand">${A}</span>
+                    <span class="math-operator">${symbol}</span>
+                    <span class="math-operand">${B}</span>
+                    <span class="math-operator">=</span>
+                    <span class="math-result">${result}</span>
+                `;
+
+                // Show outside explanation for basic mode
+                const outsideExplanation = document.getElementById('explanation');
+                if (outsideExplanation) {
+                    outsideExplanation.style.display = '';
+                }
+            }
+
+            displayAdvancedMath(data) {
+                // Fade out outside explanation before hiding
+                const outsideExplanation = document.getElementById('explanation');
+                if (outsideExplanation) {
+                    outsideExplanation.classList.add('fade-out');
+                    setTimeout(() => {
+                        outsideExplanation.classList.add('hidden');
+                        outsideExplanation.style.display = 'none';
+                    }, 500); // match CSS transition duration
+                }
+
+                const mathDisplay = this.mathEquation.parentElement;
+                mathDisplay.classList.add('advanced-mode');
+                
+                const steps = data.steps || [];
+                const breakdown = data.breakdown || '';
+                const explanationText = data.explanation || 'Here\'s your step-by-step solution!';
+
+                let stepsHTML = '';
+                if (steps.length > 0) {
+                    stepsHTML = `
+                        <div class="steps-container">
+                            ${steps.map((step, index) => `
+                                <div class="step-item" data-step="${step.step || index + 1}">
+                                    <span class="step-number">Step ${step.step || index + 1}:</span>
+                                    <span class="step-operation">${step.operation || ''}</span>
+                                    <span class="step-result">= ${step.result}</span>
+                                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 5px;">
+                                        ${step.description || ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                let breakdownHTML = '';
+                if (breakdown) {
+                    breakdownHTML = `
+                        <div class="breakdown-display reveal">
+                            <div class="breakdown-text">${breakdown}</div>
+                        </div>
+                    `;
+                }
+
+                // In-container explanation for advanced mode
+                this.mathEquation.innerHTML = `
+                    <div class="advanced-math-container">
+                        <div class="advanced-problem">${data.original_question || 'Advanced Math Problem'}</div>
+                        <div class="advanced-result">Answer: ${data.result}</div>
+                        ${stepsHTML}
+                        ${breakdownHTML}
+                        <div id="advancedExplanation" class="explanation reveal">${explanationText}</div>
+                    </div>
+                `;
+
+                // Auto-reveal breakdown & explanation after last step
+                const stepItems = this.mathEquation.querySelectorAll('.step-item');
+                if (stepItems.length > 0) {
+                    const lastStepNumber = stepItems.length;
+
+                    // Override highlightStep only for advanced mode
+                    this.highlightStep = (stepNumber) => {
+                        // Remove highlights
+                        stepItems.forEach(item => item.classList.remove('highlighted'));
+
+                        const currentStep = this.mathEquation.querySelector(`[data-step="${stepNumber}"]`);
+                        if (currentStep) {
+                            currentStep.classList.add('highlighted');
+                            currentStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+
+                        // If last step, show breakdown & explanation, then fade in outside explanation
+                        if (stepNumber === lastStepNumber) {
+                            setTimeout(() => {
+                                const breakdownEl = this.mathEquation.querySelector('.breakdown-display');
+                                if (breakdownEl) {
+                                    breakdownEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    breakdownEl.classList.add('visible');
+                                }
+                                setTimeout(() => {
+                                    const advExplanation = this.mathEquation.querySelector('#advancedExplanation');
+                                    if (advExplanation) {
+                                        advExplanation.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        advExplanation.classList.add('visible');
+                                    }
+                                }, 800);
+                            }, 800);
+                        }
+                    };
+                }
+            }
+
+            highlightStep(stepNumber) {
+                if (!this.mathEquation.parentElement.classList.contains('advanced-mode')) return; // basic mode skip
+                
+                const stepItems = this.mathEquation.querySelectorAll('.step-item');
+                stepItems.forEach(item => item.classList.remove('highlighted'));
+                
+                const currentStep = this.mathEquation.querySelector(`[data-step="${stepNumber}"]`);
+                if (currentStep) {
+                    currentStep.classList.add('highlighted');
+                    currentStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+
+                if (stepNumber === stepItems.length) {
+                    setTimeout(() => {
+                        const breakdown = this.mathEquation.querySelector('.breakdown-display');
+                        if (breakdown) breakdown.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        
+                        setTimeout(() => {
+                            const explanation = this.mathEquation.querySelector('#explanation');
+                            if (explanation) explanation.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 600);
+                    }, 600);
+                }
+            }
+
+            async startFingerSequence(data) {
+                const { A, B, result, OP } = data;
+                
+                // Clear fingers first
+                this.clearFingers();
+                await this.delay(500);
+                
+                // Show operand A on right hand
+                this.showFingers('right', A);
+                await this.delay(1000);
+                
+                // Pause for operator
+                await this.delay(800);
+                
+                // Show operand B on left hand
+                this.showFingers('left', B);
+                await this.delay(1000);
+                
+                // Clear for result
+                this.clearFingers();
+                await this.delay(600);
+                
+                // Show result (prefer right hand, split if > 5)
+                this.showResult(result);
+                await this.delay(1500);
+                
+                this.triggerCelebration();
+            }
+
+            showFingers(hand, count) {
+                const handElement = hand === 'left' ? this.leftHand : this.rightHand;
+                const fingers = handElement.querySelectorAll('.finger');
+                
+                // Clear first
+                fingers.forEach(finger => finger.classList.remove('up'));
+                
+                // Show fingers with stagger effect
+                for (let i = 0; i < Math.min(count, 5); i++) {
+                    setTimeout(() => {
+                        fingers[i].classList.add('up');
+                    }, i * 120);
+                }
+            }
+
+            showResult(result) {
+                if (result <= 5) {
+                    this.showFingers('right', result);
+                } else if (result <= 10) {
+                    this.showFingers('right', 5);
+                    setTimeout(() => {
+                        this.showFingers('left', result - 5);
+                    }, 300);
+                } else {
+                    // For results > 10, just show max on both hands
+                    this.showFingers('right', 5);
+                    this.showFingers('left', 5);
+                }
+            }
+
+            clearFingers() {
+                const allFingers = document.querySelectorAll('.finger');
+                allFingers.forEach(finger => finger.classList.remove('up'));
+            }
+
+            updateFingerPose(pose) {
+                if (pose.right) {
+                    const rightFingers = this.rightHand.querySelectorAll('.finger');
+                    pose.right.forEach((up, index) => {
+                        if (index < rightFingers.length) {
+                            rightFingers[index].classList.toggle('up', up === 1);
+                        }
+                    });
+                }
+                
+                if (pose.left) {
+                    const leftFingers = this.leftHand.querySelectorAll('.finger');
+                    pose.left.forEach((up, index) => {
+                        if (index < leftFingers.length) {
+                            leftFingers[index].classList.toggle('up', up === 1);
+                        }
+                    });
+                }
+            }
+
+            async triggerVoiceInput() {
+                if (this.lastModeChangeTime && 
+                    Date.now() - this.lastModeChangeTime < this.GRACE_PERIOD_MS) {
+                    console.log("Ignoring input during grace period");
+                    return;
+                }
+
+                if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                    this.socket.send(JSON.stringify({
+                        type: "math_gesture_wake"
+                    }));
+                }
+            }
+
+            updateVoiceStatus(text, listening) {
+                this.voiceStatus.textContent = text;
+                this.micButton.classList.toggle('listening', listening);
+                
+                if (!listening) {
+                    this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                }
+            }
+
+            updateStatus(text) {
+                this.statusText.textContent = text;
+            }
+
+            updateConnectionStatus(connected) {
+                this.statusDot.classList.toggle('connected', connected);
+                this.connectionStatus.textContent = connected ? 'Connected' : 'Disconnected';
+            }
+
+            updateExplanation(text) {
+                let explanationEl = this.mathEquation.querySelector('#explanation'); // advanced mode
+                if (!explanationEl) {
+                    explanationEl = document.getElementById('explanation'); // basic mode
+                }
+                if (explanationEl) {
+                    explanationEl.textContent = text;
+                }
+            }
+
+
+            handleTranscription(text) {
+                this.updateExplanation(`You said: "${text}"`);
+            }
+
+            triggerCelebration() {
+                // Create confetti effect
+                for (let i = 0; i < 50; i++) {
+                    setTimeout(() => {
+                        const confetti = document.createElement('div');
+                        confetti.className = 'confetti';
+                        confetti.style.left = Math.random() * 100 + '%';
+                        confetti.style.backgroundColor = this.getRandomColor();
+                        confetti.style.animationDelay = Math.random() * 3 + 's';
+                        this.celebration.appendChild(confetti);
+                        
+                        setTimeout(() => {
+                            confetti.remove();
+                        }, 3000);
+                    }, i * 50);
+                }
+            }
+
+            getRandomColor() {
+                const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f093fb', '#38ef7d', '#feca57'];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            showError(message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = message;
+                
+                this.explanation.appendChild(errorDiv);
+                
+                setTimeout(() => {
+                    errorDiv.remove();
+                }, 3000);
+            }
+
+            requestFullscreen() {
+                // Request fullscreen on first user interaction
+                const requestFS = () => {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(console.log);
+                    }
+                    document.removeEventListener('click', requestFS);
+                };
+                document.addEventListener('click', requestFS);
+            }
+
+            setLandscapeOrientation() {
+                // Lock to landscape if supported
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(console.log);
+                }
+            }
+
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            handleMathSequence(data) {
+                // Handle step-by-step math sequence
+                const { step, A, B, OP, result } = data;
+                
+                switch (step) {
+                    case 'show_operand_a':
+                        this.showFingers('right', A);
+                        break;
+                    case 'show_operator':
+                        // Visual indication of operator
+                        this.mathEquation.querySelector('.math-operator').style.color = '#f093fb';
+                        break;
+                    case 'show_operand_b':
+                        this.showFingers('left', B);
+                        break;
+                    case 'show_result':
+                        this.clearFingers();
+                        setTimeout(() => this.showResult(result), 300);
+                        break;
+                }
+            }
+        }
+
+        // FIXED WebSpeechTranscriber with proper VAD handling
+        // FIXED: WebSpeechTranscriber with duplicate word prevention
+        class WebSpeechTranscriber {
+            constructor(socket) {
+                this.socket = socket;
+                this.recognition = null;
+                this.isListening = false;
+                this.silenceTimer = null;
+                this.speechDetected = false;
+                this.SILENCE_THRESHOLD = 4000; // Increased to 4 seconds
+                this.MIN_SPEECH_LENGTH = 1000; // Increased to 1 second
+                this.startTime = null;
+                this.finalTranscript = '';
+                this.lastSentTranscript = ''; // Track what we've already sent
+                this.hasValidSpeech = false;
+                
+                this.initSpeechRecognition();
+            }
+
+            initSpeechRecognition() {
+                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                    console.error('Web Speech API not supported');
+                    return false;
+                }
+
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                this.recognition = new SpeechRecognition();
+                
+                // FIXED: Configuration for cleaner recognition
+                this.recognition.continuous = false; // CHANGED: Use single-shot recognition
+                this.recognition.interimResults = true;
+                this.recognition.lang = 'en-US';
+                this.recognition.maxAlternatives = 1;
+                
+                this.recognition.onstart = () => {
+                    console.log('Speech recognition started');
+                    this.startTime = Date.now();
+                    this.speechDetected = false;
+                    this.hasValidSpeech = false;
+                    this.isListening = true;
+                    this.finalTranscript = '';
+                    this.lastSentTranscript = '';
+                };
+
+                this.recognition.onresult = (event) => {
+                    this.handleSpeechResult(event);
+                };
+
+                this.recognition.onspeechstart = () => {
+                    console.log('Speech detected');
+                    this.speechDetected = true;
+                    this.hasValidSpeech = true;
+                    this.clearSilenceTimer();
+                };
+
+                this.recognition.onspeechend = () => {
+                    console.log('Speech ended');
+                    if (this.hasValidSpeech) {
+                        this.startSilenceTimer();
+                    }
+                };
+
+                this.recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    if (event.error === 'no-speech' && this.finalTranscript) {
+                        this.sendCleanTranscription();
+                    }
+                    this.stopListening();
+                };
+
+                this.recognition.onend = () => {
+                    console.log('Speech recognition ended');
+                    this.isListening = false;
+                    if (this.finalTranscript && this.hasValidSpeech) {
+                        this.sendCleanTranscription();
+                    }
+                };
+
+                return true;
+            }
+
+            handleSpeechResult(event) {
+                let currentTranscript = '';
+
+                // FIXED: Take only the latest result to avoid duplicates
+                if (event.results.length > 0) {
+                    const latestResult = event.results[event.results.length - 1];
+                    currentTranscript = latestResult[0].transcript.trim();
+                    
+                    console.log('Latest transcript:', currentTranscript);
+                    
+                    if (latestResult.isFinal) {
+                        this.finalTranscript = currentTranscript;
+                        console.log('Final transcript set:', this.finalTranscript);
+                        this.hasValidSpeech = true;
+                        
+                        // Send immediately when we have a final result
+                        if (this.finalTranscript && this.finalTranscript !== this.lastSentTranscript) {
+                            this.sendCleanTranscription();
+                        }
+                    }
+                }
+            }
+
+            startSilenceTimer() {
+                this.clearSilenceTimer();
+                console.log(`Starting silence timer (${this.SILENCE_THRESHOLD}ms)`);
+                
+                this.silenceTimer = setTimeout(() => {
+                    if (this.isListening && this.hasValidSpeech && this.finalTranscript) {
+                        console.log('Silence timeout - sending transcript');
+                        this.sendCleanTranscription();
+                        this.stopListening();
+                    }
+                }, this.SILENCE_THRESHOLD);
+            }
+
+            clearSilenceTimer() {
+                if (this.silenceTimer) {
+                    clearTimeout(this.silenceTimer);
+                    this.silenceTimer = null;
+                }
+            }
+
+            sendCleanTranscription() {
+                if (!this.finalTranscript || this.finalTranscript === this.lastSentTranscript) {
+                    return; // Don't send duplicates
+                }
+
+                const minDuration = Date.now() - this.startTime;
+                
+                // FIXED: Clean the transcript of repeated words
+                const cleanedTranscript = this.cleanRepeatedWords(this.finalTranscript);
+                
+                if (cleanedTranscript && cleanedTranscript.length >= 3 && minDuration >= this.MIN_SPEECH_LENGTH) {
+                    console.log(`Sending cleaned transcription: "${cleanedTranscript}"`);
+                    
+                    try {
+                        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                            this.socket.send(JSON.stringify({
+                                type: "user_transcription",
+                                text: cleanedTranscript,
+                                confidence: 0.9,
+                                duration: minDuration,
+                                timestamp: new Date().toISOString()
+                            }));
+                            
+                            this.lastSentTranscript = cleanedTranscript;
+                            console.log('Transcription sent successfully');
+                        } else {
+                            console.error('WebSocket not ready');
+                        }
+                    } catch (error) {
+                        console.error('Failed to send transcription:', error);
+                    }
+                } else {
+                    console.log(`Transcript rejected: "${cleanedTranscript}" (${cleanedTranscript.length} chars, ${minDuration}ms)`);
+                }
+            }
+
+            cleanRepeatedWords(text) {
+                if (!text) return '';
+                
+                const words = text.toLowerCase().split(/\s+/);
+                const cleanedWords = [];
+                let lastWord = '';
+                
+                for (const word of words) {
+                    // Skip if it's the same as the previous word
+                    if (word !== lastWord && word.length > 0) {
+                        cleanedWords.push(word);
+                    }
+                    lastWord = word;
+                }
+                
+                return cleanedWords.join(' ');
+            }
+
+            async startListening() {
+                if (!this.recognition) {
+                    console.error('Speech recognition not initialized');
+                    return false;
+                }
+
+                if (this.isListening) {
+                    console.log('Stopping previous recognition...');
+                    this.stopListening();
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+
+                try {
+                    console.log('Starting speech recognition...');
+                    this.recognition.start();
+                    return true;
+                } catch (error) {
+                    console.error('Failed to start speech recognition:', error);
+                    return false;
+                }
+            }
+
+            stopListening() {
+                console.log('Stopping speech recognition...');
+                if (this.recognition && this.isListening) {
+                    try {
+                        this.recognition.stop();
+                    } catch (error) {
+                        console.log('Recognition stop error:', error);
+                    }
+                }
+                this.clearSilenceTimer();
+                this.isListening = false;
+            }
+        }
+
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', () => {
+            new MathPWA();
+        });
+
+        // PWA Install Prompt
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
+    </script>
+
+    <!-- PWA Manifest -->
+    <script>
+        // Generate manifest dynamically
+        const manifestData = {
+            "name": "Maxi Math Adventure",
+            "short_name": "MathMaxi",
+            "description": "Interactive math learning with finger counting for kids",
+            "start_url": "/math.html",
+            "display": "standalone",
+            "orientation": "landscape",
+            "theme_color": "#667eea",
+            "background_color": "#764ba2",
+            "icons": [
+                {
+                    "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath fill='%23667eea' d='M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S397.4 0 256 0zM256 128c70.7 0 128 57.3 128 128s-57.3 128-128 128-128-57.3-128-128S185.3 128 256 128z'/%3E%3C/svg%3E",
+                    "sizes": "512x512",
+                    "type": "image/svg+xml"
+                }
+            ]
+        };
+        
+        const manifestBlob = new Blob([JSON.stringify(manifestData)], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(manifestBlob);
+        document.querySelector('link[rel="manifest"]').href = manifestURL;
+    </script>
+</body>
+</html>

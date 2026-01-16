@@ -1,0 +1,74 @@
+{
+  "name": "Maxi Control Center",
+  "short_name": "MaxiBot",
+  "description": "Interactive educational robot for kids",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape-primary",
+  "theme_color": "#FF6B6B",
+  "background_color": "#292F36",
+  "scope": "/",
+  "lang": "en-US",
+  "categories": ["education", "kids", "robot"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23FF6B6B'/%3E%3Cstop offset='100%25' stop-color='%234ECDC4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='256' cy='256' r='240' fill='url(%23grad)' stroke='%23FFE66D' stroke-width='32'/%3E%3Cpath d='M256 150c-20 0-40 10-50 30l-30-10c15-40 55-70 100-70 45 0 85 30 100 70l-30 10c-10-20-30-30-50-30z' fill='%23292F36'/%3E%3Ccircle cx='180' cy='220' r='30' fill='%23F7FFF7'/%3E%3Ccircle cx='330' cy='220' r='30' fill='%23F7FFF7'/%3E%3Cpath d='M200 300c0 30 25 55 55 55 30 0 55-25 55-55h-110z' fill='%23292F36'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23FF6B6B'/%3E%3Cstop offset='100%25' stop-color='%234ECDC4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='96' cy='96' r='88' fill='url(%23grad)' stroke='%23FFE66D' stroke-width='16'/%3E%3Cpath d='M96 70c-10 0-20 5-25 15l-15-5c8-20 25-35 50-35 25 0 42 15 50 35l-15 5c-5-10-15-15-25-15z' fill='%23292F36'/%3E%3Ccircle cx='70' cy='90' r='15' fill='%23F7FFF7'/%3E%3Ccircle cx='120' cy='90' r='15' fill='%23F7FFF7'/%3E%3Cpath d='M80 120c0 15 12 25 25 25 15 0 25-10 25-25h-50z' fill='%23292F36'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23FF6B6B'/%3E%3Cstop offset='100%25' stop-color='%234ECDC4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='url(%23grad)' stroke='%23FFE66D' stroke-width='4'/%3E%3Cpath d='M32 25c-5 0-10 3-12 8l-8-3c4-10 12-18 25-18 13 0 21 8 25 18l-8 3c-2-5-7-8-12-8z' fill='%23292F36'/%3E%3Ccircle cx='22' cy='30' r='5' fill='%23F7FFF7'/%3E%3Ccircle cx='42' cy='30' r='5' fill='%23F7FFF7'/%3E%3Cpath d='M25 40c0 8 6 13 13 13 8 0 13-5 13-13h-26z' fill='%23292F36'/%3E%3C/svg%3E",
+      "sizes": "64x64",
+      "type": "image/svg+xml"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23292F36'/%3E%3Cstop offset='100%25' stop-color='%231A1A2E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1280' height='720' fill='url(%23bg)'/%3E%3Ccircle cx='640' cy='200' r='100' fill='%23FF6B6B'/%3E%3Ccircle cx='600' cy='180' r='15' fill='%23F7FFF7'/%3E%3Ccircle cx='680' cy='180' r='15' fill='%23F7FFF7'/%3E%3Cpath d='M600 240c0 20 18 40 40 40 20 0 40-20 40-40h-80z' fill='%23292F36'/%3E%3Ctext x='640' y='400' font-family='Arial Black' font-size='60' fill='%23FFE66D' text-anchor='middle'%3EMaxi Control Center%3C/text%3E%3Ctext x='640' y='450' font-family='Arial' font-size='30' fill='%234ECDC4' text-anchor='middle'%3EYour Smart Learning Buddy%3C/text%3E%3Ctext x='640' y='550' font-size='80' text-anchor='middle'%3E🤖🧮💬%3C/text%3E%3C/svg%3E",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "Main Menu"
+    }
+  ],
+  "prefer_related_applications": false,
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "shortcuts": [
+    {
+      "name": "Math Mode",
+      "short_name": "Math",
+      "description": "Start math learning",
+      "url": "/math",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Ccircle cx='48' cy='48' r='40' fill='%234ECDC4'/%3E%3Ctext x='48' y='68' font-size='50' text-anchor='middle' fill='white'%3E🧮%3C/text%3E%3C/svg%3E",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Chat Mode",
+      "short_name": "Chat",
+      "description": "Talk with Maxi",
+      "url": "/chat",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Ccircle cx='48' cy='48' r='40' fill='%23FF6B6B'/%3E%3Ctext x='48' y='68' font-size='50' text-anchor='middle' fill='white'%3E💬%3C/text%3E%3C/svg%3E",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+maxi",
+      "url": "/?url=%s"
+    }
+  ]
+}
