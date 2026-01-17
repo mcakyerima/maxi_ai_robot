@@ -125,11 +125,21 @@ class SimpleAudioPlayer {
         this.isPlaying = false;
         this.audio = new Audio();
         this.onAudioComplete = null; // Callback when all audio finishes
+        this.onAudioStart = null; // Callback when audio actually starts playing
+        this.onAudioInterrupted = null; // Callback when audio is stopped mid-play
+        
         this.audio.addEventListener('ended', () => this.processQueue());
+        this.audio.addEventListener('play', () => {
+            if (this.onAudioStart && !this.audioStartFired) {
+                this.audioStartFired = true;
+                this.onAudioStart();
+            }
+        });
         this.audio.addEventListener('error', (e) => {
             console.error('Audio error:', e);
             this.processQueue(); // Continue with next
         });
+        this.audioStartFired = false;
     }
 
     async initialize() {
@@ -149,6 +159,7 @@ class SimpleAudioPlayer {
         if (this.audioQueue.length === 0) {
             this.isPlaying = false;
             console.log('🎵 Audio playback complete');
+            this.audioStartFired = false;
             // Notify listeners that audio is finished
             if (this.onAudioComplete) {
                 this.onAudioComplete();
@@ -171,10 +182,17 @@ class SimpleAudioPlayer {
     }
 
     stop() {
+        const wasPlaying = this.isPlaying;
         this.audio.pause();
         this.audio.currentTime = 0;
         this.audioQueue = [];
         this.isPlaying = false;
+        this.audioStartFired = false;
+        
+        // Notify if audio was interrupted
+        if (wasPlaying && this.onAudioInterrupted) {
+            this.onAudioInterrupted();
+        }
     }
 
     async resume() {
