@@ -932,11 +932,6 @@
                     if (this.currentStage === 'speaking') {
                         console.log('🛑 User interrupted speaking');
                         
-                        // Stop current audio immediately
-                        if (this.audioPlayer) {
-                            this.audioPlayer.stop();
-                        }
-                        
                         // Random friendly interruption messages
                         const interruptMessages = [
                             "Oh! You have something to say? I'm listening!",
@@ -952,17 +947,14 @@
                         const randomMessage = interruptMessages[Math.floor(Math.random() * interruptMessages.length)];
                         
                         // Send interrupt signal with the message to speak
+                        // Backend will: stop audio -> speak interrupt message -> start listening
                         this.socket.emit('message', {
                             type: "interrupted",
                             interrupt_message: randomMessage,
                             timestamp: new Date().toISOString()
                         });
                         
-                        // Transition to listening state
-                        this.updateStage('listening');
-                        
-                        // The backend will send the audio and then we'll auto-start listening
-                        // when audio completes (handled by audioPlayer.onAudioComplete)
+                        console.log('📤 Interrupt sent with message:', randomMessage);
                         
                         return;
                     }

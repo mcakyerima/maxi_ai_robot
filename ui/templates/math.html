@@ -964,11 +964,6 @@
                     if (this.currentStage === 'speaking') {
                         console.log('🛑 User interrupted speaking in math mode');
                         
-                        // Stop current audio immediately
-                        if (this.audioPlayer) {
-                            this.audioPlayer.stop();
-                        }
-                        
                         // Random friendly interruption messages for math mode
                         const interruptMessages = [
                             "Oops! You want to try another problem? Let's go!",
@@ -984,16 +979,15 @@
                         const randomMessage = interruptMessages[Math.floor(Math.random() * interruptMessages.length)];
                         
                         // Send interrupt signal with message
+                        // Backend will: stop audio -> speak interrupt message -> start listening
                         this.socket.emit('message', {
                             type: "interrupted",
                             interrupt_message: randomMessage,
                             timestamp: new Date().toISOString()
                         });
                         
-                        // Transition to listening state
-                        this.updateStage('listening');
+                        console.log('📤 Math interrupt sent with message:', randomMessage);
                         
-                        // Backend will send audio and auto-start listening after
                         return;
                     }
 
