@@ -5,11 +5,12 @@ Updated Groq LLM handler for Maxi AI with advanced context management.
 """
 
 import uuid
+import asyncio
 from datetime import datetime
 import os
 from groq import Groq
 from voice.speaker import SmoothTTSEngine
-from utils.logger import log_info, log_error
+from utils.logger import log_info, log_error, log_warning
 from ui.socket_server import SocketServer
 from brain.context_manager.context_manager import add_user_message, add_assistant_message, get_context_for_query
 from brain.safety import filter_input, filter_output, check_rate_limit, log_question, log_filter_event
@@ -111,25 +112,57 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
 
         full_response = ""
         chunk_count = 0
+        max_retries = 2
+        retry_count = 0
 
-        # Start streaming Groq response
-        completion = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=context,
-            temperature=0.7,
-            max_tokens=512,
-            top_p=1.0,
-            stream=True
-        )
+        # Retry logic for empty responses (Groq sometimes has temporary issues)
+        while retry_count <= max_retries:
+            try:
+                # Start streaming Groq response
+                completion = client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=context,
+                    temperature=0.7,
+                    max_tokens=512,
+                    top_p=1.0,
+                    stream=True
+                )
 
-        for chunk in completion:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                await socket.emit_response_chunk(delta, stream_id)
-                full_response += delta
-                chunk_count += 1
+                for chunk in completion:
+                    delta = chunk.choices[0].delta.content or ""
+                    if delta:
+                        await socket.emit_response_chunk(delta, stream_id)
+                        full_response += delta
+                        chunk_count += 1
+                
+                # If we got a response, break out of retry loop
+                if full_response.strip():
+                    break
+                    
+                # Empty response on first try - retry
+                if retry_count < max_retries:
+                    retry_count += 1
+                    log_warning(f"⚠️ Empty response from Groq, retry {retry_count}/{max_retries}")
+                    await asyncio.sleep(0.5)  # Brief delay before retry
+                    continue
+                else:
+                    # All retries exhausted
+                    break
+                    
+            except Exception as api_error:
+                log_error(f"❌ Groq API error on attempt {retry_count + 1}: {api_error}")
+                if retry_count < max_retries:
+                    retry_count += 1
+                    await asyncio.sleep(0.5)
+                    continue
+                else:
+                    raise  # Re-raise if all retries exhausted
 
         await socket.emit_response_complete(stream_id)
+
+        # Log if we got an empty response to help debug
+        if not full_response.strip():
+            log_warning(f"⚠️ Groq returned empty response. Context length: {len(context)} messages, Last user message: '{prompt[:50]}...'")
 
         if full_response.strip():
             # Step 4: Filter output for age-appropriateness
@@ -160,8 +193,9 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
         log_error(f"❌ Groq handler failed: {e}")
         fallback = "Hmm, I'm not sure right now. Can you try again?"
 
-        # Add error to context as well
-        await add_assistant_message(fallback)
+        # DON'T add error fallback to context - it pollutes the conversation history
+        # and makes future responses more likely to fail
+        # await add_assistant_message(fallback)  # REMOVED
 
         try:
             await socket.broadcast({
