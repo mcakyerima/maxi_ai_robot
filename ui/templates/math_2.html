@@ -30,6 +30,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
     <style>
         :root {
             --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -635,11 +638,11 @@
 
                 // Back button with proper mode reset
                 this.backButton.addEventListener('click', () => {
-                    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                        this.socket.send(JSON.stringify({
+                    if (this.socket && this.socket.connected) {
+                        this.socket.emit('message', {
                             type: "set_mode",
                             mode: "idle"
-                        }));
+                        });
                     }
                     // Small delay to ensure mode is set before navigation
                     setTimeout(() => {
@@ -657,52 +660,61 @@
             }
 
             initWebSocket() {
-                // Use secure WebSocket (wss) if page is loaded via HTTPS, otherwise ws
-                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                // Railway doesn't need port specification, local needs :8765
-                const port = location.protocol === 'https:' ? '' : ':8765';
-                const wsUrl = `${protocol}//${location.hostname}${port}`;
-                
-                console.log('Connecting to WebSocket:', wsUrl);
+                console.log('Connecting to Socket.IO...');
                 
                 try {
-                    this.socket = new WebSocket(wsUrl);
+                    this.socket = io({
+                        transports: ['websocket', 'polling'],
+                        upgrade: true
+                    });
                     
-                    this.socket.onopen = () => {
-                        console.log('WebSocket connected');
+                    this.socket.on('connect', () => {
+                        console.log('Socket.IO connected');
                         this.isConnected = true;
                         this.updateConnectionStatus(true);
                         
                         // Set math_gesture mode
-                        this.socket.send(JSON.stringify({
+                        this.socket.emit('message', {
                             type: "set_mode",
                             mode: "math_gesture"
-                        }));
+                        });
                         
                         // Start ping interval
                         this.pingInterval = setInterval(() => {
-                            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                                this.socket.send(JSON.stringify({ type: "ping" }));
+                            if (this.socket && this.socket.connected) {
+                                this.socket.emit('message', { type: "ping" });
                             }
                         }, 30000);
-                    };
+                    });
                     
-                    this.socket.onmessage = (event) => {
-                        this.handleMessage(JSON.parse(event.data));
-                    };
+                    this.socket.on('audio_chunk', (data) => {
+                        this.handleMessage(data);
+                    });
                     
-                    this.socket.onclose = () => {
-                        console.log('WebSocket disconnected');
+                    this.socket.on('state_change', (data) => {
+                        this.handleMessage(data);
+                    });
+                    
+                    this.socket.on('response', (data) => {
+                        this.handleMessage(data);
+                    });
+                    
+                    this.socket.on('message', (data) => {
+                        this.handleMessage(data);
+                    });
+                    
+                    this.socket.on('disconnect', () => {
+                        console.log('Socket.IO disconnected');
                         this.isConnected = false;
                         this.updateConnectionStatus(false);
                         clearInterval(this.pingInterval);
                         this.reconnect();
-                    };
+                    });
                     
-                    this.socket.onerror = (error) => {
-                        console.error('WebSocket error:', error);
+                    this.socket.on('connect_error', (error) => {
+                        console.error('Socket.IO connection error:', error);
                         this.showError('Connection error');
-                    };
+                    });
                     
                 } catch (error) {
                     console.error('Failed to create WebSocket:', error);
@@ -913,10 +925,10 @@
             }
 
             triggerVoiceInput() {
-                if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                    this.socket.send(JSON.stringify({
+                if (this.socket && this.socket.connected) {
+                    this.socket.emit('message', {
                         type: "math_gesture_wake"
-                    }));
+                    });
                 }
             }
 
