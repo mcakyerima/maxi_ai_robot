@@ -71,7 +71,12 @@ if not IS_RAILWAY:
             pass
 
         def get_timeout_status():
-            return {}
+            return {
+                'enabled': False,
+                'default_timeout': 20.0,
+                'short_timeout': 8.0,
+                'wake_timeout': 45.0
+            }
 
         def listen_for_wake_word(*args, **kwargs):
             return False
@@ -92,7 +97,12 @@ else:
         pass
 
     def get_timeout_status():
-        return {}
+        return {
+            'enabled': False,
+            'default_timeout': 20.0,
+            'short_timeout': 8.0,
+            'wake_timeout': 45.0
+        }
 
     def listen_for_wake_word(*args, **kwargs):
         return False
