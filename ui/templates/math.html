@@ -1041,7 +1041,13 @@
             }
 
             initWebSocket() {
-                const wsUrl = `ws://${location.hostname}:8765`;
+                // Use secure WebSocket (wss) if page is loaded via HTTPS, otherwise ws
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                // Railway doesn't need port specification, local needs :8765
+                const port = location.protocol === 'https:' ? '' : ':8765';
+                const wsUrl = `${protocol}//${location.hostname}${port}`;
+                
+                console.log('Connecting to WebSocket:', wsUrl);
                 
                 try {
                     this.socket = new WebSocket(wsUrl);
