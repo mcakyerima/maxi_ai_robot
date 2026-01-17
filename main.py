@@ -28,21 +28,60 @@ import random
 import traceback
 from typing import Optional, Set, Any, Coroutine
 
-# local imports (project-specific)
-from voice.interrupt_vad_listener import (
-    record_until_silence_with_quality_check,
-    record_until_silence,
-    set_timeout_config,
-    get_timeout_status
-)
+# Check if running on Railway (cloud) or local
+IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
 
-# some files have similar names in your repo - keep both imports you used originally
-from voice.vad_listener import record_until_silence as record_until_silence_simple
-from voice.transcriber import Transcriber
+# local imports (project-specific)
+# Only import audio modules if NOT on Railway (they need pyaudio/hardware)
+if not IS_RAILWAY:
+    try:
+        from voice.interrupt_vad_listener import (
+            record_until_silence_with_quality_check,
+            record_until_silence,
+            set_timeout_config,
+            get_timeout_status
+        )
+        from voice.vad_listener import record_until_silence as record_until_silence_simple
+        from voice.transcriber import Transcriber
+        from wake_word import listen_for_wake_word
+    except ImportError as e:
+        print(f"⚠️ Local audio modules not available: {e}")
+        # Define dummy functions for Railway
+        def record_until_silence_with_quality_check(*args, **kwargs):
+            return None
+        def record_until_silence(*args, **kwargs):
+            return None
+        def record_until_silence_simple(*args, **kwargs):
+            return None
+        def set_timeout_config(*args, **kwargs):
+            pass
+        def get_timeout_status():
+            return {}
+        def listen_for_wake_word(*args, **kwargs):
+            return False
+else:
+    # Define dummy functions for Railway (no local audio hardware)
+    print("☁️ Running on Railway - Local audio modules disabled")
+    def record_until_silence_with_quality_check(*args, **kwargs):
+        return None
+    def record_until_silence(*args, **kwargs):
+        return None
+    def record_until_silence_simple(*args, **kwargs):
+        return None
+    def set_timeout_config(*args, **kwargs):
+        pass
+    def get_timeout_status():
+        return {}
+    def listen_for_wake_word(*args, **kwargs):
+        return False
+    class Transcriber:
+        def transcribe(self, *args, **kwargs):
+            return ""
+
+# Cloud-compatible imports (always available)
 from voice.groq_transcriber import GroqTranscriber
 from voice.interrupt_aware_speaker import SmoothTTSEngine
 from brain.intent_router import IntentRouter
-from wake_word import listen_for_wake_word
 from ui.socket_server import SocketServer
 from utils.logger import log_info, log_error, log_warning
 from brain.handlers.groq_llm_handler import prewarm_model as prewarm_groq
