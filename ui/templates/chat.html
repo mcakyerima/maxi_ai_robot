@@ -1026,6 +1026,12 @@
                         this.isConnected = true;
                         this.updateConnectionStatus(true);
                         
+                        // Pass socket to transcriber
+                        if (this.transcriber) {
+                            this.transcriber.socket = this.socket;
+                            console.log('Socket reference passed to transcriber');
+                        }
+                        
                         // Set general_chat mode
                         this.socket.emit('message', {
                             type: "set_mode",
