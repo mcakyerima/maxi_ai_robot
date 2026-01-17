@@ -137,6 +137,22 @@ class SocketServer:
             listener = self._listeners.pop(message_type)
             await listener.put(data)
             return
+        
+        # Audio state tracking from frontend
+        if message_type == "audio_started":
+            logger.info("🔊 Frontend: Audio playback started")
+            # Could be used for state tracking or metrics
+            return
+        
+        if message_type == "audio_complete":
+            logger.info("✅ Frontend: Audio playback complete")
+            # Could trigger idle timeout or other logic
+            return
+        
+        if message_type == "audio_interrupted":
+            logger.info("⏸️ Frontend: Audio playback interrupted")
+            # Already handled by interrupt flow
+            return
 
         if message_type == "ping":
             await self._send(websocket, {"type": "pong"})

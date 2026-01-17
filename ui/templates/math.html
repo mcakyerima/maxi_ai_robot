@@ -926,10 +926,27 @@
                 this.audioPlayer = new SimpleAudioPlayer();
                 this.audioPlayer.initialize();
                 
-                // Listen for audio completion to auto-start microphone
+                // Audio event callbacks - inform backend of actual playback state
+                this.audioPlayer.onAudioStart = () => {
+                    console.log('🔊 Audio playback started - notifying backend');
+                    if (this.socket && this.socket.connected) {
+                        this.socket.emit('message', {
+                            type: "audio_started",
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                };
+                
                 this.audioPlayer.onAudioComplete = () => {
-                    console.log('🎵 Audio finished, checking if we should start mic...');
-                    // Only auto-start mic if we're in listening state and not already listening
+                    console.log('🎵 Audio finished - notifying backend');
+                    if (this.socket && this.socket.connected) {
+                        this.socket.emit('message', {
+                            type: "audio_complete",
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                    
+                    // Auto-start microphone if in listening state
                     if (this.currentStage === 'listening' && !this.transcriber.isListening) {
                         console.log('✅ Auto-starting microphone after audio');
                         this.transcriber.startListening().then(started => {
@@ -938,6 +955,16 @@
                             } else {
                                 console.error('Failed to start microphone');
                             }
+                        });
+                    }
+                };
+                
+                this.audioPlayer.onAudioInterrupted = () => {
+                    console.log('⏸️ Audio interrupted - notifying backend');
+                    if (this.socket && this.socket.connected) {
+                        this.socket.emit('message', {
+                            type: "audio_interrupted",
+                            timestamp: new Date().toISOString()
                         });
                     }
                 };
