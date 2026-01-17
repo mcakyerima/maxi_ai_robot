@@ -22,7 +22,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 root_dir = str(Path(__file__).parent.parent)
 sys.path.insert(0, root_dir)
 
-# Now import from project modules
+# Now import from project modules of maxi
 
 
 app = Flask(__name__,
