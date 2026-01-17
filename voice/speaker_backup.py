@@ -5,11 +5,18 @@ BACKUP VERSION - Original working implementation with local pygame playback
 """
 import asyncio
 import edge_tts
-import pygame
 import re
 from io import BytesIO
 from typing import AsyncIterable, Tuple
 from utils.logger import log_info, log_error
+
+# Try to import pygame (only needed for local audio playback)
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    log_info("⚠️ pygame not available in speaker_backup")
 
 
 class SmoothTTSEngine:
@@ -24,7 +31,7 @@ class SmoothTTSEngine:
         self.is_playing = False
         self.continuous_play_task = None
 
-        if not pygame.mixer.get_init():
+        if PYGAME_AVAILABLE and not pygame.mixer.get_init():
             pygame.mixer.init(frequency=22050, buffer=2048)
 
     async def start_continuous_player(self):
@@ -38,12 +45,15 @@ class SmoothTTSEngine:
         while True:
             try:
                 audio_data, playback_complete = await self.audio_queue.get()
-                audio_data.seek(0)
-                pygame.mixer.music.load(audio_data)
-                pygame.mixer.music.play()
+                if PYGAME_AVAILABLE:
+                    audio_data.seek(0)
+                    pygame.mixer.music.load(audio_data)
+                    pygame.mixer.music.play()
 
-                while pygame.mixer.music.get_busy():
-                    await asyncio.sleep(0.05)
+                    while pygame.mixer.music.get_busy():
+                        await asyncio.sleep(0.05)
+                else:
+                    log_error("pygame not available - skipping audio playback")
 
                 self.audio_queue.task_done()
                 playback_complete.set()

@@ -5,13 +5,20 @@ Supports both local playback (laptop speakers) and cloud streaming (tablet speak
 """
 import asyncio
 import edge_tts
-import pygame
 import re
 import base64
 import os
 from io import BytesIO
 from typing import AsyncIterable, Tuple, Optional
 from utils.logger import log_info, log_error
+
+# Try to import pygame (only needed for local audio playback)
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    log_info("⚠️ pygame not available - using cloud audio only")
 
 
 class SmoothTTSEngine:
@@ -32,8 +39,8 @@ class SmoothTTSEngine:
         self.use_cloud_audio = os.getenv(
             "USE_CLOUD_AUDIO", "true").lower() == "true"
 
-        # Initialize pygame mixer only if using local playback
-        if not self.use_cloud_audio:
+        # Initialize pygame mixer only if using local playback AND pygame is available
+        if not self.use_cloud_audio and PYGAME_AVAILABLE:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=22050, buffer=2048)
             log_info("🔊 Using local audio playback (laptop speakers)")
@@ -73,6 +80,9 @@ class SmoothTTSEngine:
 
     async def _play_via_pygame(self, audio_data: BytesIO):
         """Play audio locally using pygame (laptop speakers)."""
+        if not PYGAME_AVAILABLE:
+            log_error("pygame not available - cannot play audio locally")
+            return
         audio_data.seek(0)
         pygame.mixer.music.load(audio_data)
         pygame.mixer.music.play()
