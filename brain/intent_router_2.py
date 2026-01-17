@@ -8,7 +8,24 @@ from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional, Tuple
 from brain.handlers.time_handler import handle_time_date
 from ui.socket_server import SocketServer
-from voice import transcriber
+
+# Check if running on Railway (cloud) or local
+IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
+
+# Only import local audio modules if NOT on Railway
+if not IS_RAILWAY:
+    try:
+        from voice import transcriber
+        from voice.vad_listener import record_until_silence
+    except ImportError:
+        transcriber = None
+        def record_until_silence(*args, **kwargs):
+            return None
+else:
+    transcriber = None
+    def record_until_silence(*args, **kwargs):
+        return None
+
 from voice.groq_transcriber import GroqTranscriber
 from voice.shutdown_confirmation_voice import SHUTDOWN_CONFIRMATIONS, shutdown_farewells
 from voice.speaker import SmoothTTSEngine
@@ -21,7 +38,6 @@ from brain.handlers.gesture_handler import handle_gesture
 from brain.handlers.ollama_handler import handle_ollama, prewarm_model
 from brain.handlers.groq_llm_handler import handle_llm
 from utils.logger import log_info, log_error, log_debug
-from voice.vad_listener import record_until_silence
 from brain.context_manager.context_manager import get_context_manager
 from functools import lru_cache
 
