@@ -6,7 +6,6 @@ Now streams audio to tablet browser instead of playing locally.
 import asyncio
 import random
 import edge_tts
-import pygame
 import re
 import time
 import base64
@@ -14,6 +13,14 @@ import os
 from io import BytesIO
 from typing import AsyncIterable, Tuple, Optional
 from utils.logger import log_info, log_error, log_warning
+
+# Try to import pygame (only needed for local audio playback)
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    log_info("⚠️ pygame not available - using cloud audio only")
 
 
 class InterruptAwareTTSEngine:
@@ -42,8 +49,8 @@ class InterruptAwareTTSEngine:
         self.use_cloud_audio = os.getenv(
             "USE_CLOUD_AUDIO", "true").lower() == "true"
 
-        # Initialize pygame mixer only if using local playback
-        if not self.use_cloud_audio:
+        # Initialize pygame mixer only if using local playback AND pygame is available
+        if not self.use_cloud_audio and PYGAME_AVAILABLE:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=22050, buffer=2048)
         else:
@@ -112,7 +119,7 @@ class InterruptAwareTTSEngine:
                 await self.socket_server.emit_state_change("interrupted")
 
             # Stop current playback immediately
-            if not self.use_cloud_audio:
+            if not self.use_cloud_audio and PYGAME_AVAILABLE:
                 pygame.mixer.music.stop()
             self.is_playing = False
 
@@ -178,7 +185,7 @@ class InterruptAwareTTSEngine:
                     if self.interrupt_event.is_set():
                         log_info(
                             "🛑 Speech interrupted by button - stopping playback")
-                        if not self.use_cloud_audio:
+                        if not self.use_cloud_audio and PYGAME_AVAILABLE:
                             pygame.mixer.music.stop()
                         self.is_playing = False
 
@@ -211,6 +218,9 @@ class InterruptAwareTTSEngine:
 
     async def _play_via_pygame(self, audio_data: BytesIO):
         """Play audio locally using pygame."""
+        if not PYGAME_AVAILABLE:
+            log_warning("pygame not available - cannot play audio locally")
+            return
         audio_data.seek(0)
         pygame.mixer.music.load(audio_data)
         pygame.mixer.music.play()
@@ -248,8 +258,11 @@ class InterruptAwareTTSEngine:
             await asyncio.sleep(0.1)
         else:
             # For pygame, wait until music finishes
-            while pygame.mixer.music.get_busy():
-                await asyncio.sleep(0.03)
+            if PYGAME_AVAILABLE:
+                while pygame.mixer.music.get_busy():
+                    await asyncio.sleep(0.03)
+            else:
+                await asyncio.sleep(0.1)
 
     async def speak_text(self, text: str, interruptible: bool = True):
         """
@@ -346,10 +359,11 @@ class InterruptAwareTTSEngine:
             await self.audio_queue.join()
 
     def force_stop(self):
-        """Immediately stop all speech playback."""
-        log_info("🛑 Force stopping speech")
+        \"\"\"Immediately stop all speech playback.\"\"\"
+        log_info(\"🛑 Force stopping speech\")
         self.interrupt_event.set()
-        pygame.mixer.music.stop()
+        if PYGAME_AVAILABLE:
+            pygame.mixer.music.stop()
         self.is_playing = False
 
         # Clear audio queue
