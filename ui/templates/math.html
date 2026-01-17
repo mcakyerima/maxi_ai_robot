@@ -1767,11 +1767,7 @@
                         this.finalTranscript = currentTranscript;
                         console.log('Final transcript set:', this.finalTranscript);
                         this.hasValidSpeech = true;
-                        
-                        // Send immediately when we have a final result
-                        if (this.finalTranscript && this.finalTranscript !== this.lastSentTranscript) {
-                            this.sendCleanTranscription();
-                        }
+                        // DON'T send here - let onend handler do it to avoid duplicates
                     }
                 }
             }

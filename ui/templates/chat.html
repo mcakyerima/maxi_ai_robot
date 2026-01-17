@@ -932,10 +932,10 @@
                     if (this.currentStage === 'speaking') {
                         // User wants to interrupt speaking
                         console.log('🛑 User interrupted speaking');
-                        this.socket.send(JSON.stringify({
+                        this.socket.emit('message', {
                             type: "interrupted",
                             timestamp: new Date().toISOString()
-                        }));
+                        });
                         return;
                     }
 
@@ -950,10 +950,10 @@
 
                     try {
                         // Send wake signal to server
-                        this.socket.send(JSON.stringify({
+                        this.socket.emit('message', {
                             type: "wake_word_detected",
                             timestamp: new Date().toISOString()
-                        }));
+                        });
                         
                         console.log('📡 Wake signal sent to server');
                     } catch (error) {
