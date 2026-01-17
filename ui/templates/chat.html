@@ -360,11 +360,33 @@
         .message-history {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 10px;
             display: flex;
             flex-direction: column;
             gap: 15px;
             scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            touch-action: pan-y; /* Allow vertical touch scrolling */
+        }
+        
+        /* Custom scrollbar - visible but subtle */
+        .message-history::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .message-history::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        
+        .message-history::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+        
+        .message-history::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
         }
 
         .message {
