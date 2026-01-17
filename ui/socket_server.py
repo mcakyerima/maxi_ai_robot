@@ -148,7 +148,11 @@ class SocketServer:
                 logger.info("Ignoring wake_word_detected during grace period")
                 return
             logger.info("General chat wake triggered")
-            # Don't emit state change here - let the mode loop handle it
+            # Forward to listener if one is waiting
+            if "wake_word_detected" in self._listeners:
+                listener = self._listeners.pop("wake_word_detected")
+                await listener.put(data)
+                logger.info("✅ wake_word_detected routed to listener")
             return
 
         if message_type == "math_gesture_wake":
@@ -156,7 +160,11 @@ class SocketServer:
                 logger.info("Ignoring math_gesture_wake during grace period")
                 return
             logger.info("Math/Gesture wake triggered")
-            # Don't emit state change here - let the mode loop handle it
+            # Forward to listener if one is waiting
+            if "math_gesture_wake" in self._listeners:
+                listener = self._listeners.pop("math_gesture_wake")
+                await listener.put(data)
+                logger.info("✅ math_gesture_wake routed to listener")
             return
 
         # Mode changes
@@ -268,8 +276,13 @@ class SocketServer:
     def _send_sync(self, data: Dict):
         """Synchronous emit using Flask-SocketIO."""
         if self.socketio:
+            # Emit on the specific event type AND on 'message' for backward compatibility
             event_type = data.get('type', 'message')
+            # Emit on the type-specific channel
             self.socketio.emit(event_type, data)
+            # Also emit on 'message' channel for clients listening there
+            if event_type != 'message':
+                self.socketio.emit('message', data)
 
     async def _send(self, websocket, data: Dict):
         """Send message via Flask-SocketIO (websocket param unused but kept for compatibility)."""
@@ -278,8 +291,13 @@ class SocketServer:
     async def broadcast(self, data: Dict):
         """Broadcast data to all connected clients using Flask-SocketIO."""
         if self.socketio:
+            # Emit on the specific event type AND on 'message' for backward compatibility
             event_type = data.get('type', 'message')
+            # Emit on the type-specific channel
             self.socketio.emit(event_type, data)
+            # Also emit on 'message' channel for clients listening there
+            if event_type != 'message':
+                self.socketio.emit('message', data)
 
     # State Management API
     async def emit_state_change(self, state: str, data: Dict = None):
