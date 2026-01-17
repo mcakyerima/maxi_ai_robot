@@ -1074,18 +1074,7 @@
                         this.transcriber.socket = this.socket;
                     });
                     
-                    this.socket.on('audio_chunk', (data) => {
-                        this.handleMessage(data);
-                    });
-                    
-                    this.socket.on('state_change', (data) => {
-                        this.handleMessage(data);
-                    });
-                    
-                    this.socket.on('response', (data) => {
-                        this.handleMessage(data);
-                    });
-                    
+                    // Handle general messages
                     this.socket.on('message', (data) => {
                         this.handleMessage(data);
                     });

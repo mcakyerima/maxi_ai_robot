@@ -1045,32 +1045,7 @@
                         this.updateConnectionStatus(false);
                     });
                     
-                    // Handle audio chunks from server
-                    this.socket.on('audio_chunk', (data) => {
-                        if (this.audioPlayer) {
-                            this.audioPlayer.playAudioChunk(data.audio, data.format || 'mp3');
-                        }
-                    });
-                    
-                    // Handle state changes
-                    this.socket.on('state_change', (data) => {
-                        console.log('State change:', data);
-                        if (data.state === 'listening') {
-                            this.startVisualizer();
-                        } else if (data.state === 'speaking') {
-                            this.stopVisualizer();
-                        }
-                    });
-                    
-                    // Handle responses
-                    this.socket.on('response', (data) => {
-                        console.log('Response received:', data);
-                        if (data.text) {
-                            this.addMessage(data.text, 'maxi');
-                        }
-                    });
-                    
-                    // Handle general messages (for backward compatibility)
+                    // Handle general messages
                     this.socket.on('message', (data) => {
                         this.handleMessage(data);
                     });
@@ -1639,19 +1614,19 @@
                     console.log(`Sending cleaned transcription: "${cleanedTranscript}"`);
                     
                     try {
-                        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                            this.socket.send(JSON.stringify({
+                        if (this.socket && this.socket.connected) {
+                            this.socket.emit('message', {
                                 type: "user_transcription",
                                 text: cleanedTranscript,
                                 confidence: 0.9,
                                 duration: minDuration,
                                 timestamp: new Date().toISOString()
-                            }));
+                            });
                             
                             this.lastSentTranscript = cleanedTranscript;
                             console.log('Transcription sent successfully');
                         } else {
-                            console.error('WebSocket not ready');
+                            console.error('Socket not connected');
                         }
                     } catch (error) {
                         console.error('Failed to send transcription:', error);
