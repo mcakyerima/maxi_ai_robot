@@ -51,6 +51,9 @@ async def run_maxi_ai():
     global maxi_ai
     maxi_ai = MaxiAIWrapper()
     maxi_ai.loop = asyncio.get_event_loop()
+    # Inject socketio instance into MaxiAI's socket_server after initialization
+    if hasattr(maxi_ai, 'socket_server'):
+        maxi_ai.socket_server.socketio = socketio
     await maxi_ai.run()
 
 
@@ -184,34 +187,27 @@ def set_mode(mode):
 
 
 @socketio.on('connect')
-def handle_connect():
+def handle_connect(auth=None):
     """Handle new WebSocket connections"""
-    print('Client connected')
-    if maxi_ai and maxi_ai.socket_server:
-        # Forward connection events to MaxiAI's socket server
-        asyncio.run_coroutine_threadsafe(
-            maxi_ai.socket_server._handle_client_connect(),
-            maxi_ai.loop
-        )
+    print(f'Client connected (auth: {auth})')
+    # Connection is automatically handled by Flask-SocketIO
+    # No need to forward to MaxiAI socket server
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle WebSocket disconnections"""
     print('Client disconnected')
-    if maxi_ai and maxi_ai.socket_server:
-        asyncio.run_coroutine_threadsafe(
-            maxi_ai.socket_server._handle_client_disconnect(),
-            maxi_ai.loop
-        )
+    # Disconnection is automatically handled by Flask-SocketIO
 
 
 @socketio.on('message')
 def handle_message(data):
     """Forward WebSocket messages to MaxiAI's socket server"""
     if maxi_ai and maxi_ai.socket_server:
+        # Flask-SocketIO manages the connection, just process the message
         asyncio.run_coroutine_threadsafe(
-            maxi_ai.socket_server._process_message(data),
+            maxi_ai.socket_server._process_message(None, data),
             maxi_ai.loop
         )
 

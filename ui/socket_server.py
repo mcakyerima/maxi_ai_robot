@@ -5,7 +5,6 @@ Provides real-time updates and control through WebSockets
 import asyncio
 import json
 import logging
-import websockets
 from typing import Dict, Set, Any, Optional, Callable, Coroutine
 from datetime import datetime
 from common.enums import AppMode
@@ -15,60 +14,38 @@ logger = logging.getLogger("ui.socket")
 
 
 class SocketServer:
-    """WebSocket server for real-time communication with the UI."""
+    """WebSocket server for real-time communication with the UI using Flask-SocketIO."""
 
     MODE_TRANSITION_GRACE_PERIOD = 1.5  # seconds (now a class constant)
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
+    def __init__(self, socketio_instance=None):
         """
-        Initialize WebSocket server.
+        Initialize WebSocket server for Flask-SocketIO.
 
         Args:
-            host: Host IP address to bind
-            port: Port number to use
+            socketio_instance: Flask-SocketIO instance for emitting events
         """
-        self.host = host
-        self.port = port
-        self.clients: Set[websockets.WebSocketServerProtocol] = set()
-        self.server = None
-        self._ping_task = None
-        # Placeholder for dynamic injection
-        self.intent_router: Optional[Any] = None
+        self.socketio = socketio_instance
+        self.clients: Set[str] = set()  # Track client session IDs
         self._listeners: Dict[str, asyncio.Queue] = {}
-        self.mode_change_callback = None  # Initialize mode change callback
-        self._last_mode_change_time = 0  # Track mode changes to prevent spurious triggers
+        self.intent_router: Optional[Any] = None
+        self.mode_change_callback = None
+        self._last_mode_change_time = 0
         self._mode_transition_grace_period = self.MODE_TRANSITION_GRACE_PERIOD
         self._mode_lock = asyncio.Lock()
-        self.active_interaction = None  # Track current interaction
+        self.active_interaction = None
 
     def set_intent_router(self, router):
         print(f"Router: {router}\n")
         self.intent_router = router
 
     async def start(self):
-        """Start the WebSocket server."""
-        try:
-            self.server = await websockets.serve(
-                self._handle_client,
-                self.host,
-                self.port,
-                ping_interval=30,
-                ping_timeout=60
-            )
-            logger.info(
-                f"WebSocket server started on ws://{self.host}:{self.port}")
-        except Exception as e:
-            logger.error(f"Failed to start WebSocket server: {e}")
-            raise
+        """Start the WebSocket server (no-op for Flask-SocketIO)."""
+        logger.info("Socket server initialized with Flask-SocketIO")
 
     async def stop(self):
-        """Stop the WebSocket server."""
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-            logger.info("WebSocket server stopped")
-        if self._ping_task:
-            self._ping_task.cancel()
+        """Stop the WebSocket server (no-op for Flask-SocketIO)."""
+        logger.info("Socket server stopped")
 
     async def clear_pending_messages(self, message_types: list[str]):
         """
@@ -94,46 +71,10 @@ class SocketServer:
         """Check if we're in grace period after mode change to prevent spurious triggers"""
         return (datetime.now().timestamp() - self._last_mode_change_time) < self._mode_transition_grace_period
 
-    async def _handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str = None):
-        """Handle client connections."""
-        self.clients.add(websocket)
-        client_id = id(websocket)
-        logger.info(f"Client connected: {client_id}")
-
-        try:
-            # Send initial connection confirmation
-            await self._send(websocket, {
-                "type": "connection_established",
-                "message": "Connected to Maxi AI",
-                "timestamp": datetime.now().isoformat()
-            })
-
-            # Handle incoming messages
-            async for message in websocket:
-                try:
-                    data = json.loads(message)
-                    await self._process_message(websocket, data)
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON from client {client_id}")
-                    await self._send(websocket, {
-                        "type": "error",
-                        "message": "Invalid JSON format"
-                    })
-                except Exception as e:
-                    logger.error(f"Error processing message: {e}")
-
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client disconnected: {client_id}")
-        finally:
-            self.clients.remove(websocket)
-
-    # FIXED: Enhanced wait_for_message with better cleanup
     async def wait_for_message(self, message_type: str, timeout: float = None):
         """Wait for a specific message type with improved cleanup."""
-        # FIXED: Clean up any existing listener for this message type more aggressively
         if message_type in self._listeners:
             old_listener = self._listeners.pop(message_type)
-            # Drain any pending items
             while not old_listener.empty():
                 try:
                     old_listener.get_nowait()
@@ -160,13 +101,11 @@ class SocketServer:
             logger.info(f"❌ Cancelled waiting for {message_type}")
             raise
         finally:
-            # FIXED: Always clean up the listener
             if message_type in self._listeners:
                 del self._listeners[message_type]
                 logger.info(f"🧹 Cleaned up listener for {message_type}")
 
-    # FIXED: Socket server message processing with better listener management
-    async def _process_message(self, websocket: websockets.WebSocketServerProtocol, data: Dict):
+    async def _process_message(self, websocket, data: Dict):
         """Process incoming message from frontend with improved transcription handling."""
         message_type = data.get("type")
 
@@ -326,34 +265,21 @@ class SocketServer:
             "timestamp": datetime.now().isoformat()
         })
 
-    async def _send(self, websocket: websockets.WebSocketServerProtocol, data: Dict):
-        """Safe message sending with error handling."""
-        try:
-            await websocket.send(json.dumps(data))
-        except Exception as e:
-            logger.error(f"Error sending message: {e}")
+    def _send_sync(self, data: Dict):
+        """Synchronous emit using Flask-SocketIO."""
+        if self.socketio:
+            event_type = data.get('type', 'message')
+            self.socketio.emit(event_type, data)
+
+    async def _send(self, websocket, data: Dict):
+        """Send message via Flask-SocketIO (websocket param unused but kept for compatibility)."""
+        self._send_sync(data)
 
     async def broadcast(self, data: Dict):
-        """
-        Broadcast data to all connected clients.
-        Iterates over a snapshot of the clients set to prevent
-        'Set changed size during iteration' errors when clients connect/disconnect.
-        """
-        if not self.clients:
-            return
-
-        disconnected = set()
-
-        # Iterate over a snapshot so modifications don't cause RuntimeError
-        for client in list(self.clients):
-            try:
-                await self._send(client, data)
-            except (websockets.exceptions.ConnectionClosed, Exception) as e:
-                logger.warning(f"Client disconnected during broadcast: {e}")
-                disconnected.add(client)
-
-        # Remove disconnected clients safely
-        self.clients.difference_update(disconnected)
+        """Broadcast data to all connected clients using Flask-SocketIO."""
+        if self.socketio:
+            event_type = data.get('type', 'message')
+            self.socketio.emit(event_type, data)
 
     # State Management API
     async def emit_state_change(self, state: str, data: Dict = None):
