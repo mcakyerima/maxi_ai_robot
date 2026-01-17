@@ -6,9 +6,8 @@ Handles communication with the local Ollama server
 import asyncio
 import aiohttp
 import json
-from typing import AsyncGenerator, Dict, List
+from typing import AsyncGenerator, Dict, List, Optional
 
-from git import Optional
 from utils.logger import log_info, log_error
 
 class OllamaAPI:
