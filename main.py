@@ -14,6 +14,15 @@ Author: regenerated for Mohammed Kaka
 Date: 2025-08-12 (based on user's environment)
 """
 
+from brain.controller.finger_controller import create_finger_controller
+from common.enums import AppMode
+from brain.handlers.ollama_handler import prewarm_model as prewarm_ollama
+from brain.handlers.groq_llm_handler import prewarm_model as prewarm_groq
+from utils.logger import log_info, log_error, log_warning
+from ui.socket_server import SocketServer
+from brain.intent_router import IntentRouter
+from voice.interrupt_aware_speaker import SmoothTTSEngine
+from voice.groq_transcriber import GroqTranscriber
 import os
 from pathlib import Path
 import concurrent.futures.thread
@@ -29,7 +38,8 @@ import traceback
 from typing import Optional, Set, Any, Coroutine
 
 # Check if running on Railway (cloud) or local
-IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
+IS_RAILWAY = os.getenv(
+    'RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
 
 # local imports (project-specific)
 # Only import audio modules if NOT on Railway (they need pyaudio/hardware)
@@ -47,47 +57,51 @@ if not IS_RAILWAY:
     except ImportError as e:
         print(f"⚠️ Local audio modules not available: {e}")
         # Define dummy functions for Railway
+
         def record_until_silence_with_quality_check(*args, **kwargs):
             return None
+
         def record_until_silence(*args, **kwargs):
             return None
+
         def record_until_silence_simple(*args, **kwargs):
             return None
+
         def set_timeout_config(*args, **kwargs):
             pass
+
         def get_timeout_status():
             return {}
+
         def listen_for_wake_word(*args, **kwargs):
             return False
 else:
     # Define dummy functions for Railway (no local audio hardware)
     print("☁️ Running on Railway - Local audio modules disabled")
+
     def record_until_silence_with_quality_check(*args, **kwargs):
         return None
+
     def record_until_silence(*args, **kwargs):
         return None
+
     def record_until_silence_simple(*args, **kwargs):
         return None
+
     def set_timeout_config(*args, **kwargs):
         pass
+
     def get_timeout_status():
         return {}
+
     def listen_for_wake_word(*args, **kwargs):
         return False
+
     class Transcriber:
         def transcribe(self, *args, **kwargs):
             return ""
 
 # Cloud-compatible imports (always available)
-from voice.groq_transcriber import GroqTranscriber
-from voice.interrupt_aware_speaker import SmoothTTSEngine
-from brain.intent_router import IntentRouter
-from ui.socket_server import SocketServer
-from utils.logger import log_info, log_error, log_warning
-from brain.handlers.groq_llm_handler import prewarm_model as prewarm_groq
-from brain.handlers.ollama_handler import prewarm_model as prewarm_ollama
-from common.enums import AppMode
-from brain.controller.finger_controller import create_finger_controller
 
 load_dotenv()
 
