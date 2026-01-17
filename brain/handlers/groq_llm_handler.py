@@ -123,7 +123,7 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                     model=GROQ_MODEL,
                     messages=context,
                     temperature=0.7,
-                    max_tokens=512,
+                    max_tokens=300,  # Reduced from 512 - encourages concise responses
                     top_p=1.0,
                     stream=True
                 )

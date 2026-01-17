@@ -921,21 +921,49 @@
             }
 
             setupEventListeners() {
-                // Mic button handler with state management
+                // Mic button handler with state management and interruption
                 this.micButton.addEventListener('click', async () => {
                     if (!this.isConnected) {
                         this.showError('Not connected to server');
                         return;
                     }
 
-                    // Handle different states
+                    // Handle interruption during speaking
                     if (this.currentStage === 'speaking') {
-                        // User wants to interrupt speaking
                         console.log('🛑 User interrupted speaking');
+                        
+                        // Stop current audio immediately
+                        if (this.audioPlayer) {
+                            this.audioPlayer.stop();
+                        }
+                        
+                        // Random friendly interruption messages
+                        const interruptMessages = [
+                            "Oh! You have something to say? I'm listening!",
+                            "Oops! My bad, go ahead friend!",
+                            "Yes yes, I'm all ears!",
+                            "Hold on, let me hear you out!",
+                            "Sorry for talking too much! Your turn!",
+                            "Ah! What's on your mind?",
+                            "Pause! Tell me what you're thinking!",
+                            "Wait, you want to say something? Go ahead!"
+                        ];
+                        
+                        const randomMessage = interruptMessages[Math.floor(Math.random() * interruptMessages.length)];
+                        
+                        // Send interrupt signal with the message to speak
                         this.socket.emit('message', {
                             type: "interrupted",
+                            interrupt_message: randomMessage,
                             timestamp: new Date().toISOString()
                         });
+                        
+                        // Transition to listening state
+                        this.updateStage('listening');
+                        
+                        // The backend will send the audio and then we'll auto-start listening
+                        // when audio completes (handled by audioPlayer.onAudioComplete)
+                        
                         return;
                     }
 
