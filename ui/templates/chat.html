@@ -24,6 +24,9 @@
     <!-- jQuery (required for animations) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
 
+    <!-- Socket.IO Client (for WebSocket on Railway) -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
     <!-- Particles.js -->
     <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
 
@@ -1008,60 +1011,74 @@
             }
 
             initWebSocket() {
-                // Use secure WebSocket (wss) if page is loaded via HTTPS, otherwise ws
-                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                // Railway doesn't need port specification, local needs :8765
-                const port = location.protocol === 'https:' ? '' : ':8765';
-                const wsUrl = `${protocol}//${location.hostname}${port}`;
-                
-                console.log('Connecting to WebSocket:', wsUrl);
+                // Use Socket.IO for Railway compatibility (works on same port as Flask)
+                console.log('Connecting to Socket.IO server...');
                 
                 try {
-                    this.socket = new WebSocket(wsUrl);
+                    // Socket.IO automatically handles wss:// on HTTPS
+                    this.socket = io({
+                        transports: ['websocket', 'polling'],
+                        upgrade: true
+                    });
                     
-                    this.socket.onopen = () => {
-                        console.log('WebSocket connected');
+                    this.socket.on('connect', () => {
+                        console.log('Socket.IO connected');
                         this.isConnected = true;
                         this.updateConnectionStatus(true);
                         
                         // Set general_chat mode
-                        this.socket.send(JSON.stringify({
+                        this.socket.emit('message', {
                             type: "set_mode",
                             mode: "general_chat"
-                        }));
-                        
-                        // Start ping interval
-                        this.pingInterval = setInterval(() => {
-                            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                                this.socket.send(JSON.stringify({ type: "ping" }));
-                            }
-                        }, 30000);
-
-                        // Set socket reference for transcriber
-                        this.transcriber.socket = this.socket;
-                    };
+                        });
+                    });
                     
-                    this.socket.onmessage = (event) => {
-                        this.handleMessage(JSON.parse(event.data));
-                    };
-                    
-                    this.socket.onclose = () => {
-                        console.log('WebSocket disconnected');
+                    this.socket.on('disconnect', () => {
+                        console.log('Socket.IO disconnected');
                         this.isConnected = false;
                         this.updateConnectionStatus(false);
-                        clearInterval(this.pingInterval);
-                        this.reconnect();
-                    };
+                    });
                     
-                    this.socket.onerror = (error) => {
-                        console.error('WebSocket error:', error);
-                        this.showError('Connection error');
-                    };
+                    this.socket.on('connect_error', (error) => {
+                        console.error('Socket.IO connection error:', error);
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                    });
+                    
+                    // Handle audio chunks from server
+                    this.socket.on('audio_chunk', (data) => {
+                        if (this.audioPlayer) {
+                            this.audioPlayer.playAudioChunk(data.audio, data.format || 'mp3');
+                        }
+                    });
+                    
+                    // Handle state changes
+                    this.socket.on('state_change', (data) => {
+                        console.log('State change:', data);
+                        if (data.state === 'listening') {
+                            this.startVisualizer();
+                        } else if (data.state === 'speaking') {
+                            this.stopVisualizer();
+                        }
+                    });
+                    
+                    // Handle responses
+                    this.socket.on('response', (data) => {
+                        console.log('Response received:', data);
+                        if (data.text) {
+                            this.addMessage(data.text, 'maxi');
+                        }
+                    });
+                    
+                    // Handle general messages (for backward compatibility)
+                    this.socket.on('message', (data) => {
+                        this.handleMessage(data);
+                    });
                     
                 } catch (error) {
-                    console.error('Failed to create WebSocket:', error);
-                    this.showError('Failed to connect');
-                    this.reconnect();
+                    console.error('Failed to initialize Socket.IO:', error);
+                    this.isConnected = false;
+                    this.updateConnectionStatus(false);
                 }
             }
 
