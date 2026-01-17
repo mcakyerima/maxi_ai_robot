@@ -359,8 +359,8 @@ class InterruptAwareTTSEngine:
             await self.audio_queue.join()
 
     def force_stop(self):
-        \"\"\"Immediately stop all speech playback.\"\"\"
-        log_info(\"🛑 Force stopping speech\")
+        """Immediately stop all speech playback."""
+        log_info("🛑 Force stopping speech")
         self.interrupt_event.set()
         if PYGAME_AVAILABLE:
             pygame.mixer.music.stop()
