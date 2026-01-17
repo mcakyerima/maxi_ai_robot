@@ -44,17 +44,47 @@ class MaxiAIWrapper(MaxiAI):
 maxi_ai = None
 shutdown_event = threading.Event()
 maxi_thread = None  # Global thread reference
+maxi_initialized = threading.Event()  # Event to signal when MaxiAI is ready
 
 
 async def run_maxi_ai():
     """Run MaxiAI main loop"""
     global maxi_ai
-    maxi_ai = MaxiAIWrapper()
-    maxi_ai.loop = asyncio.get_event_loop()
-    # Inject socketio instance into MaxiAI's socket_server after initialization
-    if hasattr(maxi_ai, 'socket_server'):
-        maxi_ai.socket_server.socketio = socketio
-    await maxi_ai.run()
+    try:
+        maxi_ai = MaxiAIWrapper()
+        maxi_ai.loop = asyncio.get_event_loop()
+        
+        # Note: run() will call initialize() internally, so we wait for that
+        # Start the main run loop (includes initialization)
+        async def _run_with_callback():
+            await maxi_ai.run()
+        
+        # Create the run task
+        run_task = asyncio.create_task(_run_with_callback())
+        
+        # Wait briefly for initialization to complete
+        # MaxiAI.initialize() is called at start of run()
+        await asyncio.sleep(2)  # Give it time to create socket_server
+        
+        # Inject socketio instance after socket_server is created
+        if hasattr(maxi_ai, 'socket_server') and maxi_ai.socket_server:
+            maxi_ai.socket_server.socketio = socketio
+            print("✅ Socket.IO instance injected into MaxiAI")
+        else:
+            print("⚠️ Warning: socket_server not found on MaxiAI instance")
+        
+        # Signal that MaxiAI is ready
+        maxi_initialized.set()
+        print("✅ MaxiAI initialization complete")
+        
+        # Wait for run task to complete
+        await run_task
+        
+    except Exception as e:
+        print(f"❌ Error in MaxiAI initialization: {e}")
+        import traceback
+        traceback.print_exc()
+        maxi_initialized.set()  # Signal even on error to prevent deadlock
 
 
 def start_maxi_ai():
@@ -76,7 +106,13 @@ def initialize_maxi_ai():
         print("🤖 Starting MaxiAI backend thread...")
         maxi_thread = Thread(target=start_maxi_ai, daemon=True)
         maxi_thread.start()
-        print("✅ MaxiAI backend thread started")
+        
+        # Wait for initialization to complete (with timeout)
+        print("⏳ Waiting for MaxiAI initialization...")
+        if maxi_initialized.wait(timeout=30):
+            print("✅ MaxiAI backend ready")
+        else:
+            print("⚠️ MaxiAI initialization timeout - proceeding anyway")
     return maxi_thread
 
 
@@ -190,6 +226,9 @@ def set_mode(mode):
 def handle_connect(auth=None):
     """Handle new WebSocket connections"""
     print(f'Client connected (auth: {auth})')
+    # Wait briefly for MaxiAI to be ready
+    if not maxi_initialized.is_set():
+        print('⏳ MaxiAI not ready yet, client should retry...')
     # Connection is automatically handled by Flask-SocketIO
     # No need to forward to MaxiAI socket server
 
@@ -204,12 +243,18 @@ def handle_disconnect():
 @socketio.on('message')
 def handle_message(data):
     """Forward WebSocket messages to MaxiAI's socket server"""
+    if not maxi_initialized.is_set():
+        print('⚠️ Received message before MaxiAI initialized')
+        return
+    
     if maxi_ai and maxi_ai.socket_server:
         # Flask-SocketIO manages the connection, just process the message
         asyncio.run_coroutine_threadsafe(
             maxi_ai.socket_server._process_message(None, data),
             maxi_ai.loop
         )
+    else:
+        print('⚠️ MaxiAI or socket_server not available')
 
 # ======================
 # Static File Handling
