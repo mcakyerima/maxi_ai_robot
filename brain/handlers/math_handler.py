@@ -129,26 +129,15 @@ def create_math_response(operation: str, num1: int, num2: int, result) -> str:
     return random.choice(fun_responses)
 
 async def handle_math(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketServer):
-    log_info(f"🔢 Handling math request: {prompt}")
-
-    extracted = extract_math_problem(prompt)
-
-    if extracted:
-        operation, num1, num2 = extracted
-        result = solve_math_problem(operation, num1, num2)
-
-        if result is not None:
-            response = create_math_response(operation, num1, num2, result)
-            log_info(f"Math response: {response}")
-            print(response)
-            await socket.emit_response(response)
-            await tts_engine.speak_text(response)
-            return response
-        else:
-            log_info("Math problem too complex, passing to LLM")
-            # Don't emit or speak - let LLM handle it
-            return None
-    else:
-        log_info("Not a recognizable math problem, passing to LLM")
-        # Don't emit or speak - let LLM handle it
-        return None
+    """
+    Handle math questions by always using LLM (Groq) instead of regex parser.
+    This ensures accurate answers for ALL types of math questions including word problems.
+    
+    Returns None to indicate LLM should handle the question (no longer tries regex parsing).
+    """
+    log_info(f"🔢 Math question detected: {prompt}")
+    log_info("📚 Passing to LLM for accurate math reasoning (no regex parser)")
+    
+    # Always return None to let LLM handle it
+    # LLM is much better at math reasoning than regex patterns
+    return None

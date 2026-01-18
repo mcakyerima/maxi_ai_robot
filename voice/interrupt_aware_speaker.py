@@ -65,6 +65,7 @@ class InterruptAwareTTSEngine:
     async def _listen_for_button_interruption(self):
         """
         Listen for button-based interruption events from the socket server.
+        Now checks socket_server.interrupt_event flag directly.
         """
         HUMOROUS_INTERRUPTIONS = [
             "I was telling a story here!",
@@ -85,30 +86,21 @@ class InterruptAwareTTSEngine:
 
             while self.is_playing and not self.interrupt_event.is_set():
                 try:
-                    # Wait for "interrupted" message from UI button click
-                    interrupt_data = await asyncio.wait_for(
-                        self.socket_server.wait_for_message("interrupted"),
-                        timeout=0.1  # Short timeout to check playing status regularly
-                    )
-
-                    # Button was clicked - trigger interruption
-                    log_info("🔘 BUTTON INTERRUPTION DETECTED!")
-                    self.interrupt_event.set()
-
-                    # Use custom message from UI if provided, otherwise use random
-                    if isinstance(interrupt_data, dict) and 'interrupt_message' in interrupt_data:
-                        response = interrupt_data['interrupt_message']
-                        log_info(f"📝 Using custom interrupt message from UI")
-                    else:
+                    # Check if socket_server received an interrupt signal
+                    if self.socket_server.interrupt_event.is_set():
+                        log_info("🔘 BUTTON INTERRUPTION DETECTED!")
+                        self.interrupt_event.set()
+                        
+                        # Use random message (socket can't pass custom messages easily)
                         response = random.choice(HUMOROUS_INTERRUPTIONS)
-                        log_info(f"📝 Using random interrupt message")
+                        log_info(f"📝 Using interrupt message: {response}")
+                        
+                        asyncio.create_task(self._handle_interruption(response))
+                        break
                     
-                    asyncio.create_task(self._handle_interruption(response))
-                    break
+                    # Small sleep to avoid busy waiting
+                    await asyncio.sleep(0.1)
 
-                except asyncio.TimeoutError:
-                    # No button click yet, continue listening
-                    continue
                 except Exception as e:
                     log_error(f"Button interruption detection error: {e}")
                     await asyncio.sleep(0.1)
@@ -123,6 +115,8 @@ class InterruptAwareTTSEngine:
 
             if self.socket_server:
                 await self.socket_server.emit_state_change("interrupted")
+                # Clear the interrupt flag after handling
+                self.socket_server.interrupt_event.clear()
 
             # Stop current playback immediately
             if not self.use_cloud_audio and PYGAME_AVAILABLE:

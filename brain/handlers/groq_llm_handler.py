@@ -114,6 +114,16 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
         chunk_count = 0
         max_retries = 2
         retry_count = 0
+        
+        # Detect if user wants a longer, more detailed answer
+        longer_keywords = ['longer', 'more details', 'explain more', 'tell me more', 'go deeper', 'elaborate']
+        wants_longer_answer = any(keyword in prompt.lower() for keyword in longer_keywords)
+        
+        # Adjust max_tokens based on user request
+        max_tokens = 350 if wants_longer_answer else 150  # Short by default, longer if requested
+        
+        if wants_longer_answer:
+            log_info(f"📝 User requested longer answer - using {max_tokens} tokens")
 
         # Retry logic for empty responses (Groq sometimes has temporary issues)
         while retry_count <= max_retries:
@@ -123,13 +133,10 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                     model=GROQ_MODEL,
                     messages=context,
                     temperature=0.7,
-                    max_tokens=300,  # Reduced from 512 - encourages concise responses
+                    max_tokens=max_tokens,
                     top_p=1.0,
                     stream=True
                 )
-
-                # Emit speaking state early (as soon as we have content)
-                speaking_started = False
                 
                 for chunk in completion:
                     delta = chunk.choices[0].delta.content or ""
@@ -138,13 +145,6 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                         await socket.emit_response_chunk(delta, stream_id)
                         full_response += delta
                         chunk_count += 1
-                        
-                        # Start "speaking" state early (when we have ~20 chars)
-                        # This allows interrupt to work even while text is still streaming
-                        if not speaking_started and len(full_response) >= 20:
-                            await socket.emit_state_change("speaking")
-                            speaking_started = True
-                            log_info("🔊 Started speaking state during streaming")
                 
                 # If we got a response, break out of retry loop
                 if full_response.strip():
@@ -195,8 +195,13 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                 f"✅ Groq response: {len(full_response)} chars, {chunk_count} chunks")
             log_info(f"🤖 Response preview: {final_response[:100]}...")
             
-            # Speak the complete response (speaking state already active from streaming)
+            # Emit speaking state and speak the complete response
+            await socket.emit_state_change("speaking")
             await tts_engine.speak_text(final_response)
+            
+            # Return to listening after speaking completes
+            await socket.emit_state_change("listening")
+            
             return final_response
         else:
             raise ValueError("Empty response")

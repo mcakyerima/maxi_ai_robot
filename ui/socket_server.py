@@ -34,6 +34,11 @@ class SocketServer:
         self._mode_transition_grace_period = self.MODE_TRANSITION_GRACE_PERIOD
         self._mode_lock = asyncio.Lock()
         self.active_interaction = None
+        
+        # Audio/Speaking state tracking
+        self.is_audio_playing = False
+        self.is_speaking = False
+        self.interrupt_event = asyncio.Event()  # Set when user interrupts
 
     def set_intent_router(self, router):
         print(f"Router: {router}\n")
@@ -141,17 +146,32 @@ class SocketServer:
         # Audio state tracking from frontend
         if message_type == "audio_started":
             logger.info("🔊 Frontend: Audio playback started")
-            # Could be used for state tracking or metrics
+            self.is_audio_playing = True
+            self.is_speaking = True
             return
         
         if message_type == "audio_complete":
             logger.info("✅ Frontend: Audio playback complete")
-            # Could trigger idle timeout or other logic
+            self.is_audio_playing = False
+            self.is_speaking = False
             return
         
         if message_type == "audio_interrupted":
             logger.info("⏸️ Frontend: Audio playback interrupted")
-            # Already handled by interrupt flow
+            self.is_audio_playing = False
+            # is_speaking stays True until interrupt response completes
+            return
+        
+        # User clicked interrupt button while Maxi is speaking
+        if message_type == "interrupted":
+            logger.info("🛑 User interrupted speaking - setting interrupt flag")
+            self.interrupt_event.set()  # Signal TTS engine to stop
+            
+            # Forward to listener if one is waiting (for interrupt response flow)
+            if "interrupted" in self._listeners:
+                listener = self._listeners.pop("interrupted")
+                await listener.put(data)
+                logger.info("✅ Interrupt signal routed to listener")
             return
 
         if message_type == "ping":
