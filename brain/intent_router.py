@@ -1,3 +1,16 @@
+from brain.context_manager.context_manager import get_context_manager
+from utils.logger import log_info, log_error
+from brain.handlers.groq_llm_handler import handle_llm
+from brain.handlers.ollama_handler import handle_ollama, prewarm_model
+from brain.handlers.gesture_handler import handle_gesture
+from brain.handlers.math_handler import handle_math
+from brain.handlers.vision_handler import handle_vision
+from brain.handlers.weather_handler import handle_weather
+from brain.handlers.humor_handler import handle_humor
+from brain.intent_matcher import match_intent
+from voice.speaker import SmoothTTSEngine
+from voice.shutdown_confirmation_voice import SHUTDOWN_CONFIRMATIONS, shutdown_farewells
+from voice.groq_transcriber import GroqTranscriber
 import asyncio
 from datetime import datetime
 import random
@@ -9,7 +22,8 @@ from brain.handlers.time_handler import handle_time_date
 from ui.socket_server import SocketServer
 
 # Check if running on Railway (cloud) or local
-IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
+IS_RAILWAY = os.getenv(
+    'RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
 
 # Only import local audio modules if NOT on Railway
 if not IS_RAILWAY:
@@ -18,34 +32,22 @@ if not IS_RAILWAY:
         from voice.vad_listener import record_until_silence
     except ImportError:
         transcriber = None
+
         def record_until_silence(*args, **kwargs):
             return None
 else:
     transcriber = None
+
     def record_until_silence(*args, **kwargs):
         return None
-
-from voice.groq_transcriber import GroqTranscriber
-from voice.shutdown_confirmation_voice import SHUTDOWN_CONFIRMATIONS, shutdown_farewells
-from voice.speaker import SmoothTTSEngine
-from brain.intent_matcher import match_intent
-from brain.handlers.humor_handler import handle_humor
-from brain.handlers.weather_handler import handle_weather
-from brain.handlers.vision_handler import handle_vision
-from brain.handlers.math_handler import handle_math
-from brain.handlers.gesture_handler import handle_gesture
-from brain.handlers.ollama_handler import handle_ollama, prewarm_model
-from brain.handlers.groq_llm_handler import handle_llm
-from utils.logger import log_info, log_error
-from brain.context_manager.context_manager import get_context_manager
-            
 
 
 load_dotenv()
 
+
 class IntentRouter:
     """Routes user commands to appropriate intent handlers with full state management."""
-    
+
     def __init__(self, maxi_ai, tts_engine: SmoothTTSEngine, socket_server: SocketServer, context_manager=None, servo_controller=None):
         self.maxi_ai = maxi_ai
         self.tts_engine = tts_engine
@@ -60,7 +62,6 @@ class IntentRouter:
         else:
             log_info(f"✅🛠️ Servo connection received {self.servo_controller}")
 
-        
         self.greeting_messages = [
             "Hi there! What's your question?",
             "Hello! I'm Maxi. What can I help with?",
@@ -68,7 +69,7 @@ class IntentRouter:
             "Hey friend! Ask me anything!",
             "Hi! Maxi's listening!"
         ]
-        
+
         self.thinking_phrases = [
             "Hmm, let me think...",
             "Searching my robo-brain...",
@@ -82,7 +83,7 @@ class IntentRouter:
         if not self.socket_server:
             raise RuntimeError("Socket server not initialized")
         return self.socket_server
-    
+
     async def get_context(self):
         """Get or create the global context manager instance."""
         if not self.context_manager:
@@ -119,10 +120,10 @@ class IntentRouter:
             greeting = random.choice(self.greeting_messages)
             await socket.emit_response(greeting)
             await self.tts_engine.speak_text(greeting)
-            
+
             # Add greeting to context
             await self._add_assistant_message(greeting)
-            
+
             greeting_complete.set()
         except Exception as e:
             log_error(f"Wake word handling failed: {e}")
@@ -150,20 +151,18 @@ class IntentRouter:
         socket = await self._ensure_socket()
         farewell = random.choice(shutdown_farewells)
         log_info(f"🎤 Shutdown message: {farewell}")
-        
+
         # Emit to UI first for instant display
-        await socket.emit_response(farewell) 
-        
+        await socket.emit_response(farewell)
+
         # Add to context
         await self._add_assistant_message(farewell)
         await self.tts_engine.speak_text(farewell)
-
 
     async def speak_with_effect(self, text):
         """Make Maxi's speech more dynamic with pauses"""
         await asyncio.sleep(0.2)  # Dramatic pause
         await self.tts_engine.speak_text(text)
-        
 
     async def _initiate_system_shutdown(self):
         """Initiate full system shutdown"""
@@ -174,8 +173,6 @@ class IntentRouter:
         self.maxi_ai.request_shutdown()        # ✅ stops the main loop
         await self.maxi_ai.cleanup()           # ✅ cleans up gracefully
 
-
-
     async def process_command(self, command: str):
         """Process user command with full context management"""
         socket = await self._ensure_socket()
@@ -183,13 +180,13 @@ class IntentRouter:
         try:
             # Add user message to context first
             await self._add_user_message(command)
-            
+
             intent = match_intent(command)
             log_info(f"🔍 Detected intent: {intent}")
-            
-            if intent != "shutdown": 
+
+            if intent != "shutdown":
                 await self.play_thinking_sound()
-                
+
             await socket.emit_state_change("processing")
             print(f"\n🤖 Maxi's response: ", end="", flush=True)
 
@@ -201,12 +198,13 @@ class IntentRouter:
                 confirmation_message = random.choice(SHUTDOWN_CONFIRMATIONS)
                 await socket.emit_shutdown(confirmation_message)
                 await self.speak_with_effect(confirmation_message)
-                
+
                 # Add confirmation request to context
                 await self._add_assistant_message(confirmation_message)
 
                 # Setup listeners for both button (UI) and voice response
-                ui_reply_task = asyncio.create_task(socket.wait_for_message("user_input"))
+                ui_reply_task = asyncio.create_task(
+                    socket.wait_for_message("user_input"))
 
                 # Start voice input collection
                 await socket.emit_state_change("listening")
@@ -245,7 +243,7 @@ class IntentRouter:
                     await socket.emit_state_change("shutdown")
                     await asyncio.sleep(1.5)
                     await socket.stop()
-                    
+
                     # Initiate full system shutdown
                     await self._initiate_system_shutdown()
 
@@ -264,7 +262,7 @@ class IntentRouter:
 
             # === Other Intents ===
             handler_result = None
-            
+
             if intent == "joke_request":
                 handler_result = await handle_humor(self.tts_engine, socket)
             elif intent == "weather":
@@ -299,7 +297,7 @@ class IntentRouter:
 
             print()  # Line break after response
             await socket.emit_state_change("speaking")
-            
+
             return handler_result
 
         except Exception as e:
@@ -316,14 +314,14 @@ class IntentRouter:
         """Handle LLM requests with proper context, context are fetched for prompt internally by handle_llm"""
         try:
             llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
-            
+
             if llm_provider == "groq":
                 # For Groq, we might need to pass context differently
                 return await handle_llm(command, self.tts_engine, self.socket_server)
             else:
-                # For Ollama, we might need to pass context differently  
+                # For Ollama, we might need to pass context differently
                 return await handle_ollama(command, self.tts_engine, self.socket_server)
-                
+
         except Exception as e:
             log_error(f"LLM handler failed: {e}")
             return None

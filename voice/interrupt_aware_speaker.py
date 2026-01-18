@@ -90,14 +90,15 @@ class InterruptAwareTTSEngine:
                     if self.socket_server.interrupt_event.is_set():
                         log_info("🔘 BUTTON INTERRUPTION DETECTED!")
                         self.interrupt_event.set()
-                        
+
                         # Use random message (socket can't pass custom messages easily)
                         response = random.choice(HUMOROUS_INTERRUPTIONS)
                         log_info(f"📝 Using interrupt message: {response}")
-                        
-                        asyncio.create_task(self._handle_interruption(response))
+
+                        asyncio.create_task(
+                            self._handle_interruption(response))
                         break
-                    
+
                     # Small sleep to avoid busy waiting
                     await asyncio.sleep(0.1)
 

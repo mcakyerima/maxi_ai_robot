@@ -115,15 +115,25 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
         max_retries = 2
         retry_count = 0
         
+        # Track when to start speaking (after first complete sentence)
+        sentence_buffer = ""
+        speaking_started = False
+        sentences_to_speak = []  # Queue of sentences to speak
+        speaking_task = None  # Track the TTS task
+
         # Detect if user wants a longer, more detailed answer
-        longer_keywords = ['longer', 'more details', 'explain more', 'tell me more', 'go deeper', 'elaborate']
-        wants_longer_answer = any(keyword in prompt.lower() for keyword in longer_keywords)
-        
+        longer_keywords = ['longer', 'more details',
+                           'explain more', 'tell me more', 'go deeper', 'elaborate']
+        wants_longer_answer = any(keyword in prompt.lower()
+                                  for keyword in longer_keywords)
+
         # Adjust max_tokens based on user request
-        max_tokens = 350 if wants_longer_answer else 150  # Short by default, longer if requested
-        
+        # Short by default, longer if requested
+        max_tokens = 350 if wants_longer_answer else 150
+
         if wants_longer_answer:
-            log_info(f"📝 User requested longer answer - using {max_tokens} tokens")
+            log_info(
+                f"📝 User requested longer answer - using {max_tokens} tokens")
 
         # Retry logic for empty responses (Groq sometimes has temporary issues)
         while retry_count <= max_retries:
@@ -137,31 +147,53 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                     top_p=1.0,
                     stream=True
                 )
-                
+
                 for chunk in completion:
                     delta = chunk.choices[0].delta.content or ""
                     if delta:
                         # Stream text to UI immediately
                         await socket.emit_response_chunk(delta, stream_id)
                         full_response += delta
+                        sentence_buffer += delta
                         chunk_count += 1
-                
+                        
+                        # Start TTS as soon as we have a complete sentence
+                        if any(punct in sentence_buffer for punct in ['. ', '! ', '? ', '\n\n']):
+                            # Found complete sentence
+                            complete_sentence = sentence_buffer.strip()
+                            
+                            if not speaking_started:
+                                # First sentence - start speaking immediately
+                                log_info(f"🎤 Starting speaking after first sentence ({len(complete_sentence)} chars)")
+                                await socket.emit_state_change("speaking")
+                                speaking_started = True
+                                
+                                # Start TTS for first sentence (track the task)
+                                speaking_task = asyncio.create_task(tts_engine.speak_text(complete_sentence))
+                            else:
+                                # Subsequent sentences - queue them for later
+                                sentences_to_speak.append(complete_sentence)
+                            
+                            sentence_buffer = ""  # Clear for next sentence
+
                 # If we got a response, break out of retry loop
                 if full_response.strip():
                     break
-                    
+
                 # Empty response on first try - retry
                 if retry_count < max_retries:
                     retry_count += 1
-                    log_warning(f"⚠️ Empty response from Groq, retry {retry_count}/{max_retries}")
+                    log_warning(
+                        f"⚠️ Empty response from Groq, retry {retry_count}/{max_retries}")
                     await asyncio.sleep(0.5)  # Brief delay before retry
                     continue
                 else:
                     # All retries exhausted
                     break
-                    
+
             except Exception as api_error:
-                log_error(f"❌ Groq API error on attempt {retry_count + 1}: {api_error}")
+                log_error(
+                    f"❌ Groq API error on attempt {retry_count + 1}: {api_error}")
                 if retry_count < max_retries:
                     retry_count += 1
                     await asyncio.sleep(0.5)
@@ -173,7 +205,8 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
 
         # Log if we got an empty response to help debug
         if not full_response.strip():
-            log_warning(f"⚠️ Groq returned empty response. Context length: {len(context)} messages, Last user message: '{prompt[:50]}...'")
+            log_warning(
+                f"⚠️ Groq returned empty response. Context length: {len(context)} messages, Last user message: '{prompt[:50]}...'")
 
         if full_response.strip():
             # Step 4: Filter output for age-appropriateness
@@ -194,14 +227,32 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
             log_info(
                 f"✅ Groq response: {len(full_response)} chars, {chunk_count} chunks")
             log_info(f"🤖 Response preview: {final_response[:100]}...")
-            
-            # Emit speaking state and speak the complete response
-            await socket.emit_state_change("speaking")
-            await tts_engine.speak_text(final_response)
-            
+
+            # Handle speaking based on what happened during streaming
+            if speaking_started and speaking_task:
+                # Wait for first sentence to finish speaking
+                log_info("⏳ Waiting for first sentence to complete...")
+                await speaking_task
+                
+                # Now speak all queued sentences
+                if sentences_to_speak:
+                    log_info(f"🎤 Speaking {len(sentences_to_speak)} remaining sentences")
+                    for sentence in sentences_to_speak:
+                        await tts_engine.speak_text(sentence)
+                
+                # Speak any remaining text that wasn't a complete sentence
+                if sentence_buffer.strip():
+                    log_info(f"🎤 Speaking final incomplete sentence ({len(sentence_buffer)} chars)")
+                    await tts_engine.speak_text(sentence_buffer.strip())
+            else:
+                # Very short response (no complete sentences during streaming)
+                log_info("🎤 Starting TTS for complete response")
+                await socket.emit_state_change("speaking")
+                await tts_engine.speak_text(final_response)
+
             # Return to listening after speaking completes
             await socket.emit_state_change("listening")
-            
+
             return final_response
         else:
             raise ValueError("Empty response")

@@ -34,7 +34,7 @@ class SocketServer:
         self._mode_transition_grace_period = self.MODE_TRANSITION_GRACE_PERIOD
         self._mode_lock = asyncio.Lock()
         self.active_interaction = None
-        
+
         # Audio/Speaking state tracking
         self.is_audio_playing = False
         self.is_speaking = False
@@ -142,31 +142,31 @@ class SocketServer:
             listener = self._listeners.pop(message_type)
             await listener.put(data)
             return
-        
+
         # Audio state tracking from frontend
         if message_type == "audio_started":
             logger.info("🔊 Frontend: Audio playback started")
             self.is_audio_playing = True
             self.is_speaking = True
             return
-        
+
         if message_type == "audio_complete":
             logger.info("✅ Frontend: Audio playback complete")
             self.is_audio_playing = False
             self.is_speaking = False
             return
-        
+
         if message_type == "audio_interrupted":
             logger.info("⏸️ Frontend: Audio playback interrupted")
             self.is_audio_playing = False
             # is_speaking stays True until interrupt response completes
             return
-        
+
         # User clicked interrupt button while Maxi is speaking
         if message_type == "interrupted":
             logger.info("🛑 User interrupted speaking - setting interrupt flag")
             self.interrupt_event.set()  # Signal TTS engine to stop
-            
+
             # Forward to listener if one is waiting (for interrupt response flow)
             if "interrupted" in self._listeners:
                 listener = self._listeners.pop("interrupted")

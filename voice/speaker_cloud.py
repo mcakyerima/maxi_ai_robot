@@ -19,31 +19,33 @@ def format_text_for_natural_speech(text: str) -> str:
     """
     if not text.strip():
         return text
-    
+
     # Clean up excessive whitespace first
     text = re.sub(r'\s+', ' ', text).strip()
-    
+
     # Add pause after headings (lines that end with : or are short and capitalized)
     text = re.sub(r'([A-Z][^.!?:]*:)\s*', r'\1... ', text)
-    
+
     # Add pause after bullet points and numbered lists
     text = re.sub(r'([•\-\*]|^\d+\.)\s*', r'\1 ', text)
     text = re.sub(r'(\d+\.|•|\-)\s*([A-Z])', r'\1 \2', text)
-    
+
     # Add natural pause between sentences (double space = slight pause for TTS)
     text = re.sub(r'([.!?])\s+', r'\1  ', text)
-    
+
     # Add pause before transition words
-    transition_words = ['However', 'For example', 'Additionally', 'Moreover', 'Furthermore', 'Meanwhile', 'Therefore', 'Thus']
+    transition_words = ['However', 'For example', 'Additionally',
+                        'Moreover', 'Furthermore', 'Meanwhile', 'Therefore', 'Thus']
     for word in transition_words:
-        text = re.sub(f'\\s+{word}\\s+', f', {word}, ', text, flags=re.IGNORECASE)
-    
+        text = re.sub(f'\\s+{word}\\s+', f', {word}, ',
+                      text, flags=re.IGNORECASE)
+
     # Add comma pause before "like", "such as"
     text = re.sub(r'\s+(like|such as)\s+', r', \1 ', text, flags=re.IGNORECASE)
-    
+
     # Ensure spacing after commas
     text = re.sub(r',([^\s])', r', \1', text)
-    
+
     return text
 
 
@@ -120,7 +122,7 @@ class CloudTTSEngine:
 
         # Format text for natural speech with proper pauses
         formatted_text = format_text_for_natural_speech(text)
-        
+
         # Clean text for TTS (remove special characters)
         import re
         clean_text = re.sub(r'[^\w\s.,?!:;()-]', '', formatted_text)

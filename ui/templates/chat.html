@@ -977,33 +977,35 @@
                         return;
                     }
 
-                    // Handle interruption during speaking
-                    if (this.currentStage === 'speaking') {
-                        console.log('🛑 User interrupted speaking');
+                    // Handle interruption during speaking or streaming
+                    if (this.currentStage === 'speaking' || this.currentStage === 'streaming') {
+                        console.log('🛑 User interrupted - stopping audio and streaming immediately');
                         
-                        // Random friendly interruption messages
-                        const interruptMessages = [
-                            "Oh! You have something to say? I'm listening!",
-                            "Oops! My bad, go ahead friend!",
-                            "Yes yes, I'm all ears!",
-                            "Hold on, let me hear you out!",
-                            "Sorry for talking too much! Your turn!",
-                            "Ah! What's on your mind?",
-                            "Pause! Tell me what you're thinking!",
-                            "Wait, you want to say something? Go ahead!"
-                        ];
+                        // STEP 1: Stop audio playback immediately in frontend
+                        this.audioPlayer.stop();
                         
-                        const randomMessage = interruptMessages[Math.floor(Math.random() * interruptMessages.length)];
+                        // STEP 2: Stop any ongoing response streaming
+                        this.isStreamingResponse = false;
                         
-                        // Send interrupt signal with the message to speak
-                        // Backend will: stop audio -> speak interrupt message -> start listening
+                        // STEP 3: Update UI state immediately
+                        this.updateStage('interrupted');
+                        
+                        // STEP 4: Now notify backend
                         this.socket.emit('message', {
                             type: "interrupted",
-                            interrupt_message: randomMessage,
                             timestamp: new Date().toISOString()
                         });
                         
-                        console.log('📤 Interrupt sent with message:', randomMessage);
+                        console.log('✅ Stopped audio/streaming locally, notified backend');
+                        
+                        // STEP 5: Start listening for new input immediately
+                        setTimeout(async () => {
+                            const started = await this.transcriber.startListening();
+                            if (started) {
+                                this.updateStage('listening');
+                                console.log('🎤 Microphone reactivated after interrupt');
+                            }
+                        }, 500); // Small delay for clean transition
                         
                         return;
                     }

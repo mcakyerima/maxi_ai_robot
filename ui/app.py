@@ -53,33 +53,33 @@ async def run_maxi_ai():
     try:
         maxi_ai = MaxiAIWrapper()
         maxi_ai.loop = asyncio.get_event_loop()
-        
+
         # Note: run() will call initialize() internally, so we wait for that
         # Start the main run loop (includes initialization)
         async def _run_with_callback():
             await maxi_ai.run()
-        
+
         # Create the run task
         run_task = asyncio.create_task(_run_with_callback())
-        
+
         # Wait briefly for initialization to complete
         # MaxiAI.initialize() is called at start of run()
         await asyncio.sleep(2)  # Give it time to create socket_server
-        
+
         # Inject socketio instance after socket_server is created
         if hasattr(maxi_ai, 'socket_server') and maxi_ai.socket_server:
             maxi_ai.socket_server.socketio = socketio
             print("✅ Socket.IO instance injected into MaxiAI")
         else:
             print("⚠️ Warning: socket_server not found on MaxiAI instance")
-        
+
         # Signal that MaxiAI is ready
         maxi_initialized.set()
         print("✅ MaxiAI initialization complete")
-        
+
         # Wait for run task to complete
         await run_task
-        
+
     except Exception as e:
         print(f"❌ Error in MaxiAI initialization: {e}")
         import traceback
@@ -106,7 +106,7 @@ def initialize_maxi_ai():
         print("🤖 Starting MaxiAI backend thread...")
         maxi_thread = Thread(target=start_maxi_ai, daemon=True)
         maxi_thread.start()
-        
+
         # Wait for initialization to complete (with timeout)
         print("⏳ Waiting for MaxiAI initialization...")
         if maxi_initialized.wait(timeout=30):
@@ -246,7 +246,7 @@ def handle_message(data):
     if not maxi_initialized.is_set():
         print('⚠️ Received message before MaxiAI initialized')
         return
-    
+
     if maxi_ai and maxi_ai.socket_server:
         # Flask-SocketIO manages the connection, just process the message
         asyncio.run_coroutine_threadsafe(

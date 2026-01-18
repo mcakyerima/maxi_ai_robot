@@ -1,4 +1,18 @@
 # brain/intent_router_2.py
+from functools import lru_cache
+from brain.context_manager.context_manager import get_context_manager
+from utils.logger import log_info, log_error, log_debug
+from brain.handlers.groq_llm_handler import handle_llm
+from brain.handlers.ollama_handler import handle_ollama, prewarm_model
+from brain.handlers.gesture_handler import handle_gesture
+from brain.handlers.math_handler import handle_math
+from brain.handlers.vision_handler import handle_vision
+from brain.handlers.weather_handler import handle_weather
+from brain.handlers.humor_handler import handle_humor
+from brain.intent_matcher import match_intent, IntentMatch
+from voice.speaker import SmoothTTSEngine
+from voice.shutdown_confirmation_voice import SHUTDOWN_CONFIRMATIONS, shutdown_farewells
+from voice.groq_transcriber import GroqTranscriber
 import asyncio
 from datetime import datetime
 import random
@@ -10,7 +24,8 @@ from brain.handlers.time_handler import handle_time_date
 from ui.socket_server import SocketServer
 
 # Check if running on Railway (cloud) or local
-IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
+IS_RAILWAY = os.getenv(
+    'RAILWAY_ENVIRONMENT') is not None or os.getenv('PORT') is not None
 
 # Only import local audio modules if NOT on Railway
 if not IS_RAILWAY:
@@ -19,33 +34,22 @@ if not IS_RAILWAY:
         from voice.vad_listener import record_until_silence
     except ImportError:
         transcriber = None
+
         def record_until_silence(*args, **kwargs):
             return None
 else:
     transcriber = None
+
     def record_until_silence(*args, **kwargs):
         return None
 
-from voice.groq_transcriber import GroqTranscriber
-from voice.shutdown_confirmation_voice import SHUTDOWN_CONFIRMATIONS, shutdown_farewells
-from voice.speaker import SmoothTTSEngine
-from brain.intent_matcher import match_intent, IntentMatch
-from brain.handlers.humor_handler import handle_humor
-from brain.handlers.weather_handler import handle_weather
-from brain.handlers.vision_handler import handle_vision
-from brain.handlers.math_handler import handle_math
-from brain.handlers.gesture_handler import handle_gesture
-from brain.handlers.ollama_handler import handle_ollama, prewarm_model
-from brain.handlers.groq_llm_handler import handle_llm
-from utils.logger import log_info, log_error, log_debug
-from brain.context_manager.context_manager import get_context_manager
-from functools import lru_cache
 
 load_dotenv()
 
+
 class IntentRouter:
     """Enhanced Intent Router for Maxi educational robot with improved reliability."""
-    
+
     def __init__(self, maxi_ai, tts_engine: SmoothTTSEngine, socket_server: SocketServer, context_manager=None, servo_controller=None):
         self.maxi_ai = maxi_ai
         self.tts_engine = tts_engine
@@ -65,7 +69,7 @@ class IntentRouter:
 
         # Pre-warm frequently used handlers
         asyncio.create_task(self._prewarm_handlers())
-        
+
         self.greeting_messages = [
             "Hi there! What STEM topic can I help with today?",
             "Hello young scientist! What would you like to learn?",
@@ -73,7 +77,7 @@ class IntentRouter:
             "Hey future engineer! What can I explain today?",
             "Science buddy here! Ask me anything!"
         ]
-        
+
         self.thinking_phrases = [
             "Let me consult my knowledge base...",
             "Analyzing the scientific data...",
@@ -88,10 +92,10 @@ class IntentRouter:
             # Pre-warm the LLM model
             if os.getenv("LLM_PROVIDER", "ollama").lower() == "ollama":
                 await prewarm_model()
-            
+
             # Pre-warm other handlers that need initialization
             await handle_weather("prewarm", self.tts_engine, self.socket_server)
-            
+
             log_info("✅ Handlers pre-warmed successfully")
         except Exception as e:
             log_error(f"Handler pre-warming failed: {e}")
@@ -101,7 +105,7 @@ class IntentRouter:
         if not self.socket_server:
             raise RuntimeError("Socket server not initialized")
         return self.socket_server
-    
+
     async def get_context(self):
         """Get or create the global context manager instance."""
         if not self.context_manager:
@@ -111,7 +115,8 @@ class IntentRouter:
         """Add user message to context manager with topic detection."""
         if self.context_manager:
             # Simple topic detection - could be enhanced with NLP
-            stem_keywords = ["science", "math", "engineering", "technology", "physics", "chemistry"]
+            stem_keywords = ["science", "math", "engineering",
+                             "technology", "physics", "chemistry"]
             if any(kw in content.lower() for kw in stem_keywords):
                 self.current_topic = "STEM"
             return await self.context_manager.add_message("user", content)
@@ -127,7 +132,7 @@ class IntentRouter:
         """Get optimized context for LLM processing with topic focus."""
         if self.context_manager:
             context = await self.context_manager.get_optimized_context(query)
-            
+
             # If we have a current topic, prioritize relevant context
             if self.current_topic:
                 return [msg for msg in context if self.current_topic.lower() in msg.get("content", "").lower()] or context
@@ -144,9 +149,9 @@ class IntentRouter:
             greeting = random.choice(self.greeting_messages)
             await socket.emit_response(greeting)
             await self.tts_engine.speak_text(greeting)
-            
+
             await self._add_assistant_message(greeting)
-            
+
             greeting_complete.set()
         except Exception as e:
             log_error(f"Wake word handling failed: {e}")
@@ -173,7 +178,7 @@ class IntentRouter:
         """Wrapper for handlers with retry logic."""
         handler_name = handler.__name__
         retry_count = self.handler_retries.get(handler_name, 0)
-        
+
         try:
             result = await handler(*args, **kwargs)
             self.handler_retries[handler_name] = 0  # Reset on success
@@ -185,9 +190,10 @@ class IntentRouter:
                 log_info(f"Retrying {handler_name} (attempt {retry_count})")
                 await asyncio.sleep(0.5 * retry_count)  # Exponential backoff
                 return await self._handle_with_retry(handler, *args, max_retries=max_retries, **kwargs)
-            log_error(f"Handler {handler_name} failed after {max_retries} attempts: {e}")
+            log_error(
+                f"Handler {handler_name} failed after {max_retries} attempts: {e}")
             raise
-        
+
     async def speak_with_effect(self, text):
         """Make Maxi's speech more dynamic with pauses"""
         await asyncio.sleep(0.2)  # Dramatic pause
@@ -200,15 +206,16 @@ class IntentRouter:
         try:
             # Add user message to context first
             await self._add_user_message(command)
-            
+
             # Get intent with confidence score
             intent_match = match_intent(command)
-            log_info(f"🔍 Detected intent: {intent_match.intent} (confidence: {intent_match.confidence:.2f})")
-            
+            log_info(
+                f"🔍 Detected intent: {intent_match.intent} (confidence: {intent_match.confidence:.2f})")
+
             # Only show thinking state for non-immediate responses
             if intent_match.intent != "shutdown" and intent_match.confidence > 0.3:
                 await self.play_thinking_sound()
-                
+
             await socket.emit_state_change("processing")
             print(f"\n🤖 Maxi's response: ", end="", flush=True)
 
@@ -252,7 +259,7 @@ class IntentRouter:
 
             print()  # Line break after response
             await socket.emit_state_change("speaking")
-            
+
             return handler_result
 
         except Exception as e:
@@ -273,7 +280,7 @@ class IntentRouter:
         confirmation_message = random.choice(SHUTDOWN_CONFIRMATIONS)
         await socket.emit_shutdown(confirmation_message)
         await self.speak_with_effect(confirmation_message)
-        
+
         await self._add_assistant_message(confirmation_message)
 
         # Get user response (voice or UI)
@@ -298,7 +305,7 @@ class IntentRouter:
             await self.tts_engine.speak_text(cancel_message)
             await self._add_assistant_message(cancel_message)
             return cancel_message
-        
+
         else:
             unclear_message = "I didn't understand. Should I shut down? Say yes or no."
             await self.tts_engine.speak_text(unclear_message)
@@ -308,7 +315,8 @@ class IntentRouter:
 
     async def _get_shutdown_confirmation(self, socket: SocketServer) -> str:
         """Get shutdown confirmation from user (voice or UI)."""
-        ui_reply_task = asyncio.create_task(socket.wait_for_message("user_input"))
+        ui_reply_task = asyncio.create_task(
+            socket.wait_for_message("user_input"))
 
         # Start voice input collection
         await socket.emit_state_change("listening")
@@ -359,11 +367,11 @@ class IntentRouter:
         """Enhanced LLM handler with confidence-based prompting."""
         try:
             llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
-            
+
             # Add educational context for STEM questions
             if self.current_topic == "STEM":
                 command = f"This is a STEM education question from a secondary school student. {command}"
-            
+
             # For low confidence matches, ask LLM to clarify
             if confidence < 0.4:
                 command = f"The user may have asked: '{command}'. Could you clarify what they might be asking about, particularly in STEM education?"
@@ -383,16 +391,17 @@ class IntentRouter:
     async def _fallback_response(self, command: str, error: Exception) -> str:
         """Generate appropriate fallback response when handlers fail."""
         socket = await self._ensure_socket()
-        
+
         # Check if this is a STEM-related question
-        stem_keywords = ["science", "math", "engineering", "technology", "physics", "chemistry"]
+        stem_keywords = ["science", "math", "engineering",
+                         "technology", "physics", "chemistry"]
         is_stem = any(kw in command.lower() for kw in stem_keywords)
-        
+
         if is_stem:
             fallback = "I'm having trouble accessing my science resources. Could you try asking again?"
         else:
             fallback = "I'm having some technical difficulties. Let's try that again!"
-        
+
         await socket.emit_error("Temporary issue")
         await self.tts_engine.speak_text(fallback)
         return fallback
@@ -405,6 +414,6 @@ class IntentRouter:
 
         # Ensure all pending operations are complete
         await asyncio.sleep(1)  # Brief pause to finish any ongoing operations
-        
+
         self.maxi_ai.request_shutdown()
         await self.maxi_ai.cleanup()
