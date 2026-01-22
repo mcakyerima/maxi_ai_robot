@@ -1,0 +1,13 @@
+# Raspberry Pi Hand Controller Requirements
+# Install on Raspberry Pi with: pip3 install -r requirements_pi.txt
+
+# Flask Web Framework
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# Hardware Control
+adafruit-circuitpython-pca9685==3.4.0
+adafruit-blinka==8.20.0
+
+# Optional: For better performance and monitoring
+# gunicorn==21.2.0  # Production WSGI server (uncomment if needed)

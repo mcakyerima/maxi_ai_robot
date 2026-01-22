@@ -24,73 +24,122 @@ class FingerController:
         """
         Initialize finger controller with Raspberry Pi connection.
         """
-        self.pi_ip = pi_ip or os.getenv("RASPBERRY_PI_IP", "192.168.1.100")
-        self.pi_port = pi_port
-        self.base_url = f"http://{self.pi_ip}:{self.pi_port}"
+        # Get Pi URL from environment variable (supports full URL or IP)
+        pi_url_env = os.getenv("RASPBERRY_PI_URL", "")
+        
+        if pi_url_env:
+            # Support full URL from ngrok or custom domain
+            if pi_url_env.startswith("http://") or pi_url_env.startswith("https://"):
+                self.base_url = pi_url_env.rstrip("/")
+                self.pi_ip = "remote"
+                self.pi_port = 0
+            else:
+                # Just an IP address
+                self.pi_ip = pi_url_env
+                self.pi_port = pi_port
+                self.base_url = f"http://{self.pi_ip}:{self.pi_port}"
+        else:
+            # Fallback to parameters or default
+            self.pi_ip = pi_ip or "192.168.1.100"
+            self.pi_port = pi_port
+            self.base_url = f"http://{self.pi_ip}:{self.pi_port}"
+        
+        # API Key for authentication
+        self.api_key = os.getenv("MAXI_HAND_API_KEY", "")
+        
         self.simulation_mode = simulation_mode
         self.hardware_available = False
         self.connection_status = "disconnected"
         self.last_error = None
+        self.last_successful_connection = None
+        
+        # Connection retry configuration
+        self.max_retries = 3
+        self.retry_delays = [1, 2, 5]  # Exponential backoff: 1s, 2s, 5s
+        self.connection_timeout = 5.0  # Increased for ngrok latency
+        self.request_timeout = 8.0     # Increased for ngrok latency
         
         # Enhanced state tracking with actual finger positions
         self.current_pose = {"left": [0, 0, 0, 0, 0], "right": [0, 0, 0, 0, 0]}
         self.target_pose = {"left": [0, 0, 0, 0, 0], "right": [0, 0, 0, 0, 0]}
         self.fingers_moving = {"left": [False] * 5, "right": [False] * 5}
         
-        # OPTIMIZATION: Reduce connection timeouts for faster responses
-        self.connection_timeout = 3.0  # Reduced from 5.0
-        self.request_timeout = 5.0     # Reduced from 10.0
-        
         log_info(f"FingerController initialized: {self.base_url}")
+        if self.api_key:
+            log_info("🔑 API key authentication enabled")
+        else:
+            log_warning("⚠️ No API key configured - connection may fail if Pi requires authentication")
         
     async def initialize(self) -> bool:
         """
-        Initialize connection to Raspberry Pi API and set initial closed state.
-        OPTIMIZED: Faster initialization with reduced timeouts.
+        Initialize connection to Raspberry Pi API with retry logic.
+        Returns True if hardware is available, False if falling back to simulation.
         """
         if self.simulation_mode:
             log_info("Finger controller running in simulation mode (forced)")
             await self.set_initial_closed_state()
             return False
         
-        try:
-            log_info(f"Connecting to finger controller at {self.base_url}...")
-            
-            # OPTIMIZED: Reduced timeout for faster initialization
-            timeout = aiohttp.ClientTimeout(total=self.connection_timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(f"{self.base_url}/health") as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        self.hardware_available = True
-                        self.connection_status = "connected"
-                        
-                        # Get detailed status and reset if needed
-                        async with session.get(f"{self.base_url}/status") as status_response:
-                            if status_response.status == 200:
-                                status_data = await status_response.json()
-                                emergency = status_data.get("emergency_stop", False)
-                                
-                                if emergency:
-                                    log_warning("Hardware in emergency stop mode - attempting reset...")
-                                    await self._reset_emergency_stop()
-                        
-                        # Set hands to initial closed state
-                        await self.set_initial_closed_state()
-                        
-                        log_info("Finger controller hardware ready!")
-                        return True
-                    else:
-                        raise Exception(f"Health check failed: {response.status}")
-                        
-        except Exception as e:
-            self.last_error = str(e)
-            self.hardware_available = False
-            self.connection_status = "failed"
-            log_warning(f"Hardware connection failed: {e}")
-            log_info("Falling back to simulation mode")
-            await self.set_initial_closed_state()
-            return False
+        # Try to connect with retry logic
+        for attempt in range(self.max_retries):
+            try:
+                log_info(f"Connecting to finger controller at {self.base_url} (attempt {attempt + 1}/{self.max_retries})...")
+                
+                timeout = aiohttp.ClientTimeout(total=self.connection_timeout)
+                headers = self._get_auth_headers()
+                
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    # Try health check endpoint (doesn't require auth)
+                    async with session.get(f"{self.base_url}/health", headers={}) as response:
+                        if response.status == 200:
+                            log_info("✅ Raspberry Pi API is reachable")
+                            
+                            # Now try authenticated status check
+                            async with session.get(f"{self.base_url}/status", headers=headers) as status_response:
+                                if status_response.status == 200:
+                                    status_data = await status_response.json()
+                                    self.hardware_available = True
+                                    self.connection_status = "connected"
+                                    self.last_successful_connection = datetime.now()
+                                    
+                                    # Check for emergency stop
+                                    emergency = status_data.get("emergency_stop", False)
+                                    if emergency:
+                                        log_warning("Hardware in emergency stop mode - attempting reset...")
+                                        await self._reset_emergency_stop()
+                                    
+                                    # Set hands to initial closed state
+                                    await self.set_initial_closed_state()
+                                    
+                                    log_info("✅ Finger controller hardware ready!")
+                                    return True
+                                    
+                                elif status_response.status == 401:
+                                    raise Exception("Authentication failed - check MAXI_HAND_API_KEY")
+                                else:
+                                    raise Exception(f"Status check failed: {status_response.status}")
+                        else:
+                            raise Exception(f"Health check failed: {response.status}")
+                            
+            except Exception as e:
+                self.last_error = str(e)
+                log_warning(f"Connection attempt {attempt + 1} failed: {e}")
+                
+                # Retry with exponential backoff
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delays[attempt]
+                    log_info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    # Final attempt failed
+                    log_warning(f"All {self.max_retries} connection attempts failed")
+        
+        # All attempts failed - fall back to simulation
+        self.hardware_available = False
+        self.connection_status = "failed"
+        log_info("📡 Falling back to simulation mode (Pi not reachable)")
+        await self.set_initial_closed_state()
+        return False
     
     async def set_initial_closed_state(self):
         """Set initial state to all fingers closed (human-like starting position)."""
@@ -111,43 +160,69 @@ class FingerController:
         except Exception as e:
             log_error(f"Error setting initial closed state: {e}")
     
-    async def _make_api_request(self, method: str, endpoint: str, data: Dict = None) -> Optional[Dict]:
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Get HTTP headers with API key authentication."""
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        return headers
+    
+    async def _make_api_request(self, method: str, endpoint: str, data: Dict = None, retry: bool = True) -> Optional[Dict]:
         """
-        Make API request to Raspberry Pi with error handling.
-        OPTIMIZED: Reduced timeout for faster responses.
+        Make API request to Raspberry Pi with retry logic and authentication.
         """
-        log_info(f"Making API request: {method} {endpoint} with data: {data}")
         if not self.hardware_available:
             log_warning("Hardware not available, skipping API request")
             return None
         
-        try:
-            # OPTIMIZED: Reduced timeout for faster API responses
-            timeout = aiohttp.ClientTimeout(total=self.request_timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                url = f"{self.base_url}{endpoint}"
+        retries = self.max_retries if retry else 1
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
+                headers = self._get_auth_headers()
                 
-                if method.upper() == "GET":
-                    async with session.get(url) as response:
-                        if response.status == 200:
-                            return await response.json()
-                        else:
-                            log_error(f"API request failed: {response.status}")
-                            return None
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    url = f"{self.base_url}{endpoint}"
+                    
+                    if method.upper() == "GET":
+                        async with session.get(url, headers=headers) as response:
+                            if response.status == 200:
+                                self.last_successful_connection = datetime.now()
+                                return await response.json()
+                            elif response.status == 401:
+                                log_error("Authentication failed - check API key")
+                                self.hardware_available = False
+                                return None
+                            else:
+                                raise Exception(f"Request failed with status {response.status}")
+                    
+                    elif method.upper() == "POST":
+                        async with session.post(url, json=data, headers=headers) as response:
+                            if response.status == 200:
+                                self.last_successful_connection = datetime.now()
+                                return await response.json()
+                            elif response.status == 401:
+                                log_error("Authentication failed - check API key")
+                                self.hardware_available = False
+                                return None
+                            else:
+                                raise Exception(f"Request failed with status {response.status}")
+                                
+            except Exception as e:
+                self.last_error = str(e)
                 
-                elif method.upper() == "POST":
-                    headers = {"Content-Type": "application/json"}
-                    async with session.post(url, json=data, headers=headers) as response:
-                        if response.status == 200:
-                            return await response.json()
-                        else:
-                            log_error(f"API request failed: {response.status}")
-                            return None
-                            
-        except Exception as e:
-            log_error(f"API request error: {e}")
-            self.last_error = str(e)
-            return None
+                if attempt < retries - 1:
+                    delay = self.retry_delays[min(attempt, len(self.retry_delays) - 1)]
+                    log_warning(f"API request failed (attempt {attempt + 1}/{retries}): {e}")
+                    log_info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    log_error(f"API request failed after {retries} attempts: {e}")
+                    # Mark as temporarily unavailable but don't disable permanently
+                    return None
+        
+        return None
     
     async def _reset_emergency_stop(self) -> bool:
         """Reset emergency stop on hardware."""
@@ -494,13 +569,13 @@ class FingerController:
     def get_connection_info(self) -> Dict[str, Any]:
         """Get connection information."""
         return {
-            "pi_ip": self.pi_ip,
-            "pi_port": self.pi_port,
-            "base_url": self.base_url,
+            "pi_url": self.base_url,
             "hardware_available": self.hardware_available,
             "connection_status": self.connection_status,
             "simulation_mode": not self.hardware_available,
             "last_error": self.last_error,
+            "last_successful_connection": self.last_successful_connection.isoformat() if self.last_successful_connection else None,
+            "api_key_configured": bool(self.api_key),
             "current_pose": self.current_pose,
             "fingers_moving": self.fingers_moving
         }

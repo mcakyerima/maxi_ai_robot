@@ -10,6 +10,8 @@ Updated: 2025-08-15 - Added calibration endpoints
 """
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+from functools import wraps
 from adafruit_pca9685 import PCA9685
 from board import SCL, SDA
 import busio
@@ -24,6 +26,28 @@ import traceback
 from typing import Dict, List, Optional, Tuple
 
 app = Flask(__name__)
+
+# --- Security Configuration ---
+# API Key for authentication (load from environment variable)
+API_KEY = os.getenv("MAXI_HAND_API_KEY", "your-secure-api-key-here-change-me")
+
+# CORS Configuration - Allow Railway domain and localhost
+ALLOWED_ORIGINS = [
+    "https://web-production-0cb67.up.railway.app",  # Railway production
+    "http://localhost:5002",  # Local development
+    "http://127.0.0.1:5002",  # Local development alternative
+]
+
+# Add more origins from environment variable if provided
+EXTRA_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
+if EXTRA_ORIGINS:
+    ALLOWED_ORIGINS.extend([origin.strip() for origin in EXTRA_ORIGINS.split(",")])
+
+# Enable CORS with specific origins
+CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
+
+print(f"🔒 CORS enabled for origins: {ALLOWED_ORIGINS}")
+print(f"🔑 API Key authentication: {'ENABLED' if API_KEY != 'your-secure-api-key-here-change-me' else 'USING DEFAULT KEY - CHANGE THIS!'}")
 
 # --- Servo Configuration ---
 SERVO_MIN_PULSE = 500  # microseconds
@@ -595,9 +619,31 @@ class EnhancedFingerControllerAPI:
 # Initialize enhanced controller instance
 controller = EnhancedFingerControllerAPI()
 
+# --- Authentication Decorator ---
+def require_api_key(f):
+    """Decorator to require API key authentication for endpoints."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Get API key from header
+        provided_key = request.headers.get("X-API-Key")
+        
+        # Check if API key matches
+        if provided_key != API_KEY:
+            return jsonify({
+                "success": False,
+                "error": "Unauthorized - Invalid or missing API key",
+                "message": "Please provide a valid X-API-Key header"
+            }), 401
+        
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
+
 # --- Enhanced Flask API Routes ---
 
 @app.route("/status", methods=["GET"])
+@require_api_key
 def get_status():
     """Get comprehensive system status and diagnostics."""
     return jsonify({
@@ -611,6 +657,7 @@ def get_status():
 
 # CALIBRATION ENDPOINTS
 @app.route("/get_calibration", methods=["GET"])
+@require_api_key
 def get_calibration():
     """Get current calibration data and system state."""
     return jsonify({
@@ -620,6 +667,7 @@ def get_calibration():
     })
 
 @app.route("/save_calibration", methods=["POST"])
+@require_api_key
 def save_calibration_route():
     """Save current calibration data."""
     success = controller.save_calibration()
@@ -630,6 +678,7 @@ def save_calibration_route():
     return jsonify({"success": success})
 
 @app.route("/set_use_calibration", methods=["POST"])
+@require_api_key
 def set_use_calibration():
     """Set whether to use saved calibration for gestures."""
     try:
@@ -641,6 +690,7 @@ def set_use_calibration():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/move", methods=["POST"])
+@require_api_key
 def move_joint():
     """Move specific joint to angle (for calibration)."""
     try:
@@ -658,6 +708,7 @@ def move_joint():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/update_range", methods=["POST"])
+@require_api_key
 def update_range():
     """Update calibration range for a joint."""
     try:
@@ -677,6 +728,7 @@ def update_range():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/preset", methods=["POST"])
+@require_api_key
 def preset():
     """Execute calibration presets."""
     try:
@@ -702,6 +754,7 @@ def preset():
 
 # EXISTING ENDPOINTS
 @app.route("/show_number", methods=["POST"])
+@require_api_key
 def show_number():
     """Show a number using intelligent finger counting."""
     try:
@@ -732,6 +785,7 @@ def show_number():
         return jsonify({"success": False, "error": error_msg}), 500
 
 @app.route("/close_all_hands", methods=["POST"])
+@require_api_key
 def close_all_hands():
     """Close all fingers on both hands intelligently."""
     try:
@@ -749,6 +803,7 @@ def close_all_hands():
         return jsonify({"success": False, "error": error_msg}), 500
 
 @app.route("/clear_hands", methods=["POST"])
+@require_api_key
 def clear_hands():
     """Clear specified hands to closed position."""
     try:
@@ -773,6 +828,7 @@ def clear_hands():
         return jsonify({"success": False, "error": error_msg}), 500
 
 @app.route("/emergency_stop", methods=["POST"])
+@require_api_key
 def emergency_stop():
     """Activate emergency stop."""
     success = controller.emergency_stop()
@@ -784,6 +840,7 @@ def emergency_stop():
     })
 
 @app.route("/reset_emergency", methods=["POST"])
+@require_api_key
 def reset_emergency():
     """Reset emergency stop."""
     success = controller.reset_emergency_stop()
@@ -795,6 +852,7 @@ def reset_emergency():
     })
 
 @app.route("/move_finger", methods=["POST"])
+@require_api_key
 def move_finger():
     """Move specific finger to target state with smart tracking."""
     try:
@@ -833,6 +891,7 @@ def move_finger():
         return jsonify({"success": False, "error": error_msg}), 500
 
 @app.route("/get_finger_states", methods=["GET"])
+@require_api_key
 def get_finger_states():
     """Get current finger states."""
     return jsonify(controller.get_finger_states())
@@ -849,6 +908,7 @@ def health_check():
 
 # GESTURE ENDPOINTS
 @app.route("/gesture", methods=["POST"])
+@require_api_key
 def gesture():
     """Execute predefined gestures."""
     try:
