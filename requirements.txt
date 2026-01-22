@@ -54,7 +54,7 @@ word2number==1.1
 # AUDIO (Cloud-based, minimal)
 # ============================================
 # Edge TTS for cloud text-to-speech
-edge-tts==7.0.1
+edge-tts==7.2.7
 pydub==0.25.1
 
 # ============================================
