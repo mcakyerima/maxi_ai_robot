@@ -60,13 +60,8 @@ async def run_maxi_ai():
         maxi_ai = MaxiAIWrapper()
         maxi_ai.loop = asyncio.get_event_loop()
 
-        # Note: run() will call initialize() internally, so we wait for that
         # Start the main run loop (includes initialization)
-        async def _run_with_callback():
-            await maxi_ai.run()
-
-        # Create the run task
-        run_task = asyncio.create_task(_run_with_callback())
+        run_task = asyncio.create_task(maxi_ai.run())
 
         # Wait briefly for initialization to complete
         # MaxiAI.initialize() is called at start of run()
@@ -83,8 +78,8 @@ async def run_maxi_ai():
         maxi_initialized.set()
         print("✅ MaxiAI initialization complete")
 
-        # Wait for run task to complete
-        await run_task
+        # Keep the loop running - wait for shutdown or run_task completion
+        await asyncio.gather(run_task, return_exceptions=True)
 
     except Exception as e:
         print(f"❌ Error in MaxiAI initialization: {e}")
@@ -94,19 +89,29 @@ async def run_maxi_ai():
 
 
 def start_maxi_ai():
-    """Start MaxiAI in a separate thread"""
+    """Start MaxiAI in a separate thread with persistent event loop"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
+        # Run MaxiAI and keep the loop running
         loop.run_until_complete(run_maxi_ai())
+        
+        # If run_maxi_ai completes, keep loop running for socket operations
+        print("⚠️ MaxiAI run() completed, keeping loop alive for sockets")
+        loop.run_forever()
     except asyncio.CancelledError:
         pass
     except Exception as e:
         print(f"❌ Error in MaxiAI thread: {e}")
         import traceback
         traceback.print_exc()
-    # Don't close the loop - keep it open for ongoing socket operations
-    # The loop will be closed during shutdown
+    finally:
+        # Clean shutdown when stopping
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        print("✅ MaxiAI event loop shut down cleanly")
 
 
 def initialize_maxi_ai():
