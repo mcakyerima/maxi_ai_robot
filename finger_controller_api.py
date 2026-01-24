@@ -29,7 +29,10 @@ app = Flask(__name__)
 
 # --- Security Configuration ---
 # API Key for authentication (load from environment variable)
-API_KEY = os.getenv("MAXI_HAND_API_KEY", "your-secure-api-key-here-change-me")
+API_KEY = os.getenv("MAXI_HAND_API_KEY", "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6")
+
+# Simulation mode (for testing without hardware)
+SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
 
 # CORS Configuration - Allow Railway domain and localhost
 ALLOWED_ORIGINS = [
@@ -41,13 +44,19 @@ ALLOWED_ORIGINS = [
 # Add more origins from environment variable if provided
 EXTRA_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 if EXTRA_ORIGINS:
-    ALLOWED_ORIGINS.extend([origin.strip() for origin in EXTRA_ORIGINS.split(",")])
+    ALLOWED_ORIGINS.extend([origin.strip()
+                           for origin in EXTRA_ORIGINS.split(",")])
 
 # Enable CORS with specific origins
 CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 
 print(f"🔒 CORS enabled for origins: {ALLOWED_ORIGINS}")
-print(f"🔑 API Key authentication: {'ENABLED' if API_KEY != 'your-secure-api-key-here-change-me' else 'USING DEFAULT KEY - CHANGE THIS!'}")
+print(
+    f"🔑 API Key authentication: {'ENABLED' if API_KEY != 'your-secure-api-key-here-change-me' else 'USING DEFAULT KEY - CHANGE THIS!'}")
+
+if SIMULATION_MODE:
+    print("⚠️  SIMULATION MODE ENABLED - Hardware will not be initialized")
+    print("   This is useful for testing without I2C hardware connected")
 
 # --- Servo Configuration ---
 SERVO_MIN_PULSE = 500  # microseconds
@@ -135,6 +144,14 @@ class EnhancedFingerControllerAPI:
 
     def initialize_hardware(self) -> bool:
         """Initialize PCA9685 hardware controller."""
+        # Skip hardware initialization if in simulation mode
+        if SIMULATION_MODE:
+            print("🎭 Simulation mode - skipping hardware initialization")
+            system_status["hardware_connected"] = False
+            system_status["simulation_mode"] = True
+            system_status["startup_time"] = datetime.now().isoformat()
+            return True
+        
         try:
             print("🔧 Initializing PCA9685 hardware controller...")
 
@@ -145,6 +162,7 @@ class EnhancedFingerControllerAPI:
 
             print(f"✅ PCA9685 initialized at {PWM_FREQ}Hz")
             system_status["hardware_connected"] = True
+            system_status["simulation_mode"] = False
             system_status["startup_time"] = datetime.now().isoformat()
 
             return True
@@ -163,7 +181,8 @@ class EnhancedFingerControllerAPI:
 
         try:
             if not os.path.exists(self.calibration_file):
-                print(f"⚠️ Calibration file not found, using defaults: {self.calibration_file}")
+                print(
+                    f"⚠️ Calibration file not found, using defaults: {self.calibration_file}")
                 calibration_data = DEFAULT_RANGES.copy()
                 system_status["calibration_saved"] = False
                 return True
@@ -173,7 +192,8 @@ class EnhancedFingerControllerAPI:
 
             # Validate calibration structure
             required_hands = ["left", "right"]
-            required_joints = ["thumb", "index", "majeure", "ringfinger", "pinky", "wrist"]
+            required_joints = ["thumb", "index",
+                               "majeure", "ringfinger", "pinky", "wrist"]
 
             for hand in required_hands:
                 if hand not in calibration_data:
@@ -181,13 +201,17 @@ class EnhancedFingerControllerAPI:
 
                 for joint in required_joints:
                     if joint not in calibration_data[hand]:
-                        print(f"⚠️ Missing {joint} in {hand} hand calibration, using default")
-                        calibration_data[hand][joint] = DEFAULT_RANGES[hand][joint].copy()
+                        print(
+                            f"⚠️ Missing {joint} in {hand} hand calibration, using default")
+                        calibration_data[hand][joint] = DEFAULT_RANGES[hand][joint].copy(
+                        )
 
                     joint_data = calibration_data[hand][joint]
                     if "min" not in joint_data or "max" not in joint_data:
-                        print(f"⚠️ Missing min/max values for {hand} {joint}, using default")
-                        calibration_data[hand][joint] = DEFAULT_RANGES[hand][joint].copy()
+                        print(
+                            f"⚠️ Missing min/max values for {hand} {joint}, using default")
+                        calibration_data[hand][joint] = DEFAULT_RANGES[hand][joint].copy(
+                        )
 
             print("✅ Calibration data loaded successfully")
             print(f"📊 Left hand joints: {len(calibration_data['left'])}")
@@ -211,11 +235,11 @@ class EnhancedFingerControllerAPI:
         try:
             with open(self.calibration_file, 'w') as f:
                 json.dump(calibration_data, f, indent=2)
-            
+
             system_status["calibration_saved"] = True
             print("✅ Calibration saved successfully")
             return True
-            
+
         except Exception as e:
             error_msg = f"Failed to save calibration: {str(e)}"
             print(f"❌ {error_msg}")
@@ -258,6 +282,11 @@ class EnhancedFingerControllerAPI:
             print("🛑 Emergency stop active - servo movement blocked")
             return False
 
+        # If in simulation mode, just log and return success
+        if SIMULATION_MODE:
+            print(f"🎭 [SIMULATION] Set channel {channel} to {angle}°")
+            return True
+
         if not self.pca:
             print("❌ PCA9685 not initialized")
             return False
@@ -267,7 +296,8 @@ class EnhancedFingerControllerAPI:
             angle = max(0, min(180, angle))
 
             # Convert angle to pulse width
-            pulse = SERVO_MIN_PULSE + (angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
+            pulse = SERVO_MIN_PULSE + \
+                (angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
             duty_cycle = self.pulse_to_duty_cycle_us(int(pulse))
 
             # Set PWM duty cycle
@@ -319,13 +349,16 @@ class EnhancedFingerControllerAPI:
                 # Get servo channel and positions
                 channel = SERVO_CHANNELS[hand][finger]
                 current_angle = current_positions[hand][finger]
-                target_angle = self.get_calibrated_position(hand, finger, target_state)
+                target_angle = self.get_calibrated_position(
+                    hand, finger, target_state)
 
                 # Calculate movement steps
-                steps = max(1, duration_ms // 15)  # ~67Hz update rate for smoother movement
+                # ~67Hz update rate for smoother movement
+                steps = max(1, duration_ms // 15)
                 angle_diff = target_angle - current_angle
 
-                print(f"🤖 Moving {hand} {finger}: {current_angle}° → {target_angle}° in {steps} steps")
+                print(
+                    f"🤖 Moving {hand} {finger}: {current_angle}° → {target_angle}° in {steps} steps")
 
                 for step in range(steps + 1):
                     if self.emergency_stop_active:
@@ -337,7 +370,8 @@ class EnhancedFingerControllerAPI:
                     eased_progress = self.ease_in_out_cubic(progress)
 
                     # Calculate interpolated angle
-                    current_step_angle = current_angle + (angle_diff * eased_progress)
+                    current_step_angle = current_angle + \
+                        (angle_diff * eased_progress)
 
                     # Set servo position
                     if not self.set_servo_angle(channel, int(current_step_angle)):
@@ -370,7 +404,7 @@ class EnhancedFingerControllerAPI:
 
             channel = SERVO_CHANNELS[hand][joint]
             success = self.set_servo_angle(channel, angle)
-            
+
             if success:
                 current_positions[hand][joint] = angle
                 system_status["total_movements"] += 1
@@ -394,20 +428,23 @@ class EnhancedFingerControllerAPI:
         """Show a number (0-10) on specified hand using smart finger counting."""
         try:
             if not 0 <= number <= 10:
-                raise ValueError(f"Number must be 0-10 for single hand, got {number}")
+                raise ValueError(
+                    f"Number must be 0-10 for single hand, got {number}")
 
             print(f"🔢 Showing number {number} on {hand} hand")
 
             if number <= 5:
                 # Single hand counting (0-5)
-                finger_order = ["index", "majeure", "ringfinger", "pinky", "thumb"]
-                
+                finger_order = ["index", "majeure",
+                                "ringfinger", "pinky", "thumb"]
+
                 # Close all fingers first
                 for finger in finger_order:
                     if self.finger_states[hand][finger] == 1:
-                        self.move_finger_smooth(hand, finger, "closed", duration_ms // 5)
+                        self.move_finger_smooth(
+                            hand, finger, "closed", duration_ms // 5)
                         time.sleep(0.05)
-                
+
                 # Open required fingers
                 for i in range(number):
                     if not self.move_finger_smooth(hand, finger_order[i], "open", duration_ms):
@@ -416,11 +453,13 @@ class EnhancedFingerControllerAPI:
             else:
                 # For 6-10, use both hands or extended gestures
                 # Open all fingers on primary hand (5)
-                finger_order = ["index", "majeure", "ringfinger", "pinky", "thumb"]
+                finger_order = ["index", "majeure",
+                                "ringfinger", "pinky", "thumb"]
                 for finger in finger_order:
-                    self.move_finger_smooth(hand, finger, "open", duration_ms // 6)
+                    self.move_finger_smooth(
+                        hand, finger, "open", duration_ms // 6)
                     time.sleep(0.05)
-                
+
                 # Show additional count on opposite hand
                 other_hand = "right" if hand == "left" else "left"
                 additional = number - 5
@@ -449,12 +488,15 @@ class EnhancedFingerControllerAPI:
             # Close both hands simultaneously with smart transitions
             for hand in ["left", "right"]:
                 for finger in fingers:
-                    if self.finger_states[hand][finger] == 1:  # Only close open fingers
-                        finger_success = self.move_finger_smooth(hand, finger, "closed", 150)
+                    # Only close open fingers
+                    if self.finger_states[hand][finger] == 1:
+                        finger_success = self.move_finger_smooth(
+                            hand, finger, "closed", 150)
                         success &= finger_success
                         time.sleep(0.03)  # Brief delay
 
-            print(f"✅ All hands closed {'successfully' if success else 'with some issues'}")
+            print(
+                f"✅ All hands closed {'successfully' if success else 'with some issues'}")
             return success
 
         except Exception as e:
@@ -473,7 +515,8 @@ class EnhancedFingerControllerAPI:
 
             for finger in fingers:
                 if self.finger_states[hand][finger] == 1:  # Only close open fingers
-                    finger_success = self.move_finger_smooth(hand, finger, "closed", 150)
+                    finger_success = self.move_finger_smooth(
+                        hand, finger, "closed", 150)
                     success &= finger_success
                     time.sleep(0.05)
 
@@ -491,7 +534,8 @@ class EnhancedFingerControllerAPI:
         try:
             print("🤲 Setting initial closed state for all fingers")
 
-            joints = ["thumb", "index", "majeure", "ringfinger", "pinky", "wrist"]
+            joints = ["thumb", "index", "majeure",
+                      "ringfinger", "pinky", "wrist"]
             success = True
 
             for hand in ["left", "right"]:
@@ -500,8 +544,9 @@ class EnhancedFingerControllerAPI:
                     if joint == "wrist":
                         target_angle = 80  # Neutral wrist position
                     else:
-                        target_angle = self.get_calibrated_position(hand, joint, "closed")
-                    
+                        target_angle = self.get_calibrated_position(
+                            hand, joint, "closed")
+
                     channel = SERVO_CHANNELS[hand][joint]
 
                     if self.set_servo_angle(channel, target_angle):
@@ -513,7 +558,8 @@ class EnhancedFingerControllerAPI:
 
                     time.sleep(0.05)  # Small delay between movements
 
-            print(f"✅ Initial closed state {'set successfully' if success else 'set with issues'}")
+            print(
+                f"✅ Initial closed state {'set successfully' if success else 'set with issues'}")
             return success
 
         except Exception as e:
@@ -582,18 +628,19 @@ class EnhancedFingerControllerAPI:
     def preset_calibrate(self, hand: str) -> bool:
         """Move hand to calibration position (all joints to min)."""
         try:
-            joints = ["thumb", "index", "majeure", "ringfinger", "pinky", "wrist"]
+            joints = ["thumb", "index", "majeure",
+                      "ringfinger", "pinky", "wrist"]
             for joint in joints:
                 if joint == "wrist":
                     angle = 80  # Neutral wrist
                 else:
                     angle = calibration_data[hand][joint]["min"]
-                
+
                 success = self.move_joint_to_angle(hand, joint, angle)
                 if not success:
                     return False
                 time.sleep(0.1)
-            
+
             return True
         except Exception as e:
             print(f"❌ Calibrate preset error: {e}")
@@ -602,14 +649,15 @@ class EnhancedFingerControllerAPI:
     def preset_max(self, hand: str) -> bool:
         """Move hand to maximum position (all joints to max)."""
         try:
-            joints = ["thumb", "index", "majeure", "ringfinger", "pinky", "wrist"]
+            joints = ["thumb", "index", "majeure",
+                      "ringfinger", "pinky", "wrist"]
             for joint in joints:
                 angle = calibration_data[hand][joint]["max"]
                 success = self.move_joint_to_angle(hand, joint, angle)
                 if not success:
                     return False
                 time.sleep(0.1)
-            
+
             return True
         except Exception as e:
             print(f"❌ Max preset error: {e}")
@@ -620,13 +668,15 @@ class EnhancedFingerControllerAPI:
 controller = EnhancedFingerControllerAPI()
 
 # --- Authentication Decorator ---
+
+
 def require_api_key(f):
     """Decorator to require API key authentication for endpoints."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Get API key from header
         provided_key = request.headers.get("X-API-Key")
-        
+
         # Check if API key matches
         if provided_key != API_KEY:
             return jsonify({
@@ -634,9 +684,9 @@ def require_api_key(f):
                 "error": "Unauthorized - Invalid or missing API key",
                 "message": "Please provide a valid X-API-Key header"
             }), 401
-        
+
         return f(*args, **kwargs)
-    
+
     return decorated_function
 
 
@@ -656,6 +706,8 @@ def get_status():
     })
 
 # CALIBRATION ENDPOINTS
+
+
 @app.route("/get_calibration", methods=["GET"])
 @require_api_key
 def get_calibration():
@@ -666,6 +718,7 @@ def get_calibration():
         "current_positions": current_positions
     })
 
+
 @app.route("/save_calibration", methods=["POST"])
 @require_api_key
 def save_calibration_route():
@@ -674,8 +727,9 @@ def save_calibration_route():
     if success:
         system_status["calibration_saved"] = True
         controller.save_state(system_status)
-    
+
     return jsonify({"success": success})
+
 
 @app.route("/set_use_calibration", methods=["POST"])
 @require_api_key
@@ -683,11 +737,13 @@ def set_use_calibration():
     """Set whether to use saved calibration for gestures."""
     try:
         data = request.json
-        system_status["use_saved_calibration"] = data.get("use_calibration", False)
+        system_status["use_saved_calibration"] = data.get(
+            "use_calibration", False)
         controller.save_state(system_status)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route("/move", methods=["POST"])
 @require_api_key
@@ -698,14 +754,15 @@ def move_joint():
         hand = data.get("hand")
         joint = data.get("joint")
         angle = int(data.get("angle"))
-        
+
         if hand in SERVO_CHANNELS and joint in SERVO_CHANNELS[hand]:
             success = controller.move_joint_to_angle(hand, joint, angle)
             return jsonify({"success": success})
         return jsonify({"success": False, "error": "Invalid hand or joint"}), 400
-    
+
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route("/update_range", methods=["POST"])
 @require_api_key
@@ -723,9 +780,10 @@ def update_range():
             calibration_data[hand][joint]["max"] = max_val
             return jsonify({"success": True})
         return jsonify({"success": False, "error": "Invalid hand or joint"}), 400
-    
+
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route("/preset", methods=["POST"])
 @require_api_key
@@ -748,11 +806,13 @@ def preset():
             success = controller.emergency_stop()
 
         return jsonify({"success": success})
-    
+
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 # EXISTING ENDPOINTS
+
+
 @app.route("/show_number", methods=["POST"])
 @require_api_key
 def show_number():
@@ -784,6 +844,7 @@ def show_number():
         print(f"❌ {error_msg}")
         return jsonify({"success": False, "error": error_msg}), 500
 
+
 @app.route("/close_all_hands", methods=["POST"])
 @require_api_key
 def close_all_hands():
@@ -801,6 +862,7 @@ def close_all_hands():
         error_msg = f"Close all hands error: {str(e)}"
         print(f"❌ {error_msg}")
         return jsonify({"success": False, "error": error_msg}), 500
+
 
 @app.route("/clear_hands", methods=["POST"])
 @require_api_key
@@ -827,6 +889,7 @@ def clear_hands():
         print(f"❌ {error_msg}")
         return jsonify({"success": False, "error": error_msg}), 500
 
+
 @app.route("/emergency_stop", methods=["POST"])
 @require_api_key
 def emergency_stop():
@@ -839,6 +902,7 @@ def emergency_stop():
         "timestamp": datetime.now().isoformat()
     })
 
+
 @app.route("/reset_emergency", methods=["POST"])
 @require_api_key
 def reset_emergency():
@@ -850,6 +914,7 @@ def reset_emergency():
         "finger_states": controller.finger_states,
         "timestamp": datetime.now().isoformat()
     })
+
 
 @app.route("/move_finger", methods=["POST"])
 @require_api_key
@@ -890,11 +955,13 @@ def move_finger():
         print(f"❌ {error_msg}")
         return jsonify({"success": False, "error": error_msg}), 500
 
+
 @app.route("/get_finger_states", methods=["GET"])
 @require_api_key
 def get_finger_states():
     """Get current finger states."""
     return jsonify(controller.get_finger_states())
+
 
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -907,6 +974,8 @@ def health_check():
     })
 
 # GESTURE ENDPOINTS
+
+
 @app.route("/gesture", methods=["POST"])
 @require_api_key
 def gesture():
@@ -952,12 +1021,13 @@ def gesture():
             print(f"👊 Making fist with {hand} hand")
             fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
             success = True
-            
+
             for finger in fingers:
-                finger_success = self.move_finger_smooth(hand, finger, "closed", 150)
+                finger_success = self.move_finger_smooth(
+                    hand, finger, "closed", 150)
                 success &= finger_success
                 time.sleep(0.1)
-            
+
             return success
         except Exception as e:
             print(f"❌ Fist gesture error: {e}")
@@ -967,21 +1037,21 @@ def gesture():
         """Make peace sign (index and middle finger up)."""
         try:
             print(f"✌️ Making peace sign with {hand} hand")
-            
+
             # First close all fingers
             fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
             for finger in fingers:
                 self.move_finger_smooth(hand, finger, "closed", 100)
                 time.sleep(0.05)
-            
+
             time.sleep(0.3)
-            
+
             # Open index and majeure
             success = True
             success &= self.move_finger_smooth(hand, "index", "open", 200)
             time.sleep(0.1)
             success &= self.move_finger_smooth(hand, "majeure", "open", 200)
-            
+
             return success
         except Exception as e:
             print(f"❌ Peace gesture error: {e}")
@@ -991,13 +1061,13 @@ def gesture():
         """Perform waving gesture."""
         try:
             print(f"👋 Waving with {hand} hand")
-            
+
             # Open all fingers first
             fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
             for finger in fingers:
                 self.move_finger_smooth(hand, finger, "open", 150)
                 time.sleep(0.05)
-            
+
             # Wave with wrist if available
             if "wrist" in SERVO_CHANNELS[hand]:
                 wrist_center = 80
@@ -1006,10 +1076,10 @@ def gesture():
                     time.sleep(0.3)
                     self.move_joint_to_angle(hand, "wrist", wrist_center + 20)
                     time.sleep(0.3)
-                
+
                 # Return to center
                 self.move_joint_to_angle(hand, "wrist", wrist_center)
-            
+
             return True
         except Exception as e:
             print(f"❌ Wave gesture error: {e}")
@@ -1019,25 +1089,31 @@ def gesture():
         """Perform counting gesture from 1 to 5."""
         try:
             print(f"🔢 Counting 1-5 with {hand} hand")
-            
+
             for i in range(6):  # 0 to 5
                 success = self.show_number_on_hand(hand, i, 200)
                 if not success:
                     return False
                 time.sleep(1)  # Hold each number
-            
+
             return True
         except Exception as e:
             print(f"❌ Count gesture error: {e}")
             return False
 
+
 # Add gesture methods to controller class
-controller.make_fist = lambda hand: controller.__class__.make_fist(controller, hand)
-controller.make_peace = lambda hand: controller.__class__.make_peace(controller, hand)
+controller.make_fist = lambda hand: controller.__class__.make_fist(
+    controller, hand)
+controller.make_peace = lambda hand: controller.__class__.make_peace(
+    controller, hand)
 controller.wave = lambda hand: controller.__class__.wave(controller, hand)
-controller.count_to_ten = lambda hand: controller.__class__.count_to_ten(controller, hand)
+controller.count_to_ten = lambda hand: controller.__class__.count_to_ten(
+    controller, hand)
 
 # --- Enhanced Initialization ---
+
+
 def initialize_system():
     """Initialize the enhanced finger controller system."""
     print("🚀 Starting Enhanced Maxi AI Finger Controller API")
@@ -1083,6 +1159,7 @@ def initialize_system():
     print("=" * 60)
 
     return True
+
 
 # --- Main Entry Point ---
 if __name__ == "__main__":

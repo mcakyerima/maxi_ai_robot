@@ -112,8 +112,8 @@ Transfer the updated `finger_controller_api.py` to your Raspberry Pi:
 
 ```bash
 # From your local machine (where this file is)
-scp finger_controller_api.py pi@<PI_IP_ADDRESS>:~/maxi_hand/
-scp hand_calibration.json pi@<PI_IP_ADDRESS>:~/maxi_hand/
+scp finger_controller_api.py Maxzeeton@192.168.0.154:~/servo_control/
+scp hand_calibration.json Maxzeeton@192.168.0.154:~/servo_control/
 ```
 
 Or manually copy the files via USB, SFTP, or any preferred method.
@@ -271,12 +271,12 @@ Example output: `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6`
 
 ```bash
 # Create environment file
-nano ~/maxi_hand/.env
+nano ~/servo_control/.env
 ```
 
 Add:
 ```bash
-MAXI_HAND_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
+MAXI_HAND_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo
 ALLOWED_ORIGINS=https://web-production-0cb67.up.railway.app,http://localhost:5002
 ```
 
@@ -284,20 +284,59 @@ ALLOWED_ORIGINS=https://web-production-0cb67.up.railway.app,http://localhost:500
 
 ```bash
 # Add to ~/.bashrc for automatic loading
-echo 'export MAXI_HAND_API_KEY="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"' >> ~/.bashrc
+echo 'export MAXI_HAND_API_KEY="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo"' >> ~/.bashrc
 source ~/.bashrc
+```
+
+**Verify it's set:**
+```bash
+python3 -c "import os; print('API Key exists:', 'MAXI_HAND_API_KEY' in os.environ); print('Value:', os.getenv('MAXI_HAND_API_KEY'))"
 ```
 
 ---
 
 ## 🚀 Running the Service
 
+### Testing Without Hardware (Simulation Mode)
+
+**If you don't have the I2C hardware connected yet**, you can run in simulation mode to test the API and ngrok connection:
+
+```bash
+cd ~/servo_control
+source venv/bin/activate
+
+# Run in simulation mode (no hardware required)
+export SIMULATION_MODE=true
+python3 finger_controller_api.py
+```
+
+You'll see:
+```
+⚠️  SIMULATION MODE ENABLED - Hardware will not be initialized
+   This is useful for testing without I2C hardware connected
+🎭 Simulation mode - skipping hardware initialization
+✅ Enhanced Finger Controller API ready!
+```
+
+**Use this to test:**
+- ngrok connection
+- Railway connection  
+- API authentication
+- All endpoints work (they just log instead of moving servos)
+
+**Once hardware is connected, remove `SIMULATION_MODE=true`** and restart!
+
+---
+
 ### Manual Start (for testing)
 
 ```bash
-cd ~/maxi_hand
+cd ~/servo_control
+source venv/bin/activate
 python3 finger_controller_api.py
 ```
+
+**Note:** Make sure to activate your virtual environment before running the script manually!
 
 You should see:
 ```
@@ -318,7 +357,7 @@ Create systemd service:
 sudo nano /etc/systemd/system/maxi-hand.service
 ```
 
-Add:
+Add (adjust paths for your setup):
 ```ini
 [Unit]
 Description=Maxi AI Hand Controller API
@@ -326,10 +365,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/maxi_hand
-Environment="MAXI_HAND_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"
-ExecStart=/usr/bin/python3 /home/pi/maxi_hand/finger_controller_api.py
+User=Maxzeeton
+WorkingDirectory=/home/Maxzeeton/servo_control
+Environment="MAXI_HAND_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo"
+# Uncomment below for simulation mode (testing without hardware)
+# Environment="SIMULATION_MODE=true"
+# Activate virtual environment and run the API
+ExecStart=/home/Maxzeeton/servo_control/venv/bin/python3 /home/Maxzeeton/servo_control/finger_controller_api.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -339,6 +381,13 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
+**Important Notes:**
+- Replace `Maxzeeton` with your Pi username if different
+- Replace `/home/Maxzeeton/servo_control` with your actual working directory
+- The `ExecStart` uses the Python from your venv (`venv/bin/python3`) to ensure all packages are available
+- Update `MAXI_HAND_API_KEY` with your actual generated key
+- **To test without hardware**: Uncomment the `SIMULATION_MODE=true` line
+
 Enable and start:
 ```bash
 sudo systemctl enable maxi-hand.service
@@ -347,8 +396,11 @@ sudo systemctl start maxi-hand.service
 # Check status
 sudo systemctl status maxi-hand.service
 
-# View logs
+# View logs (real-time)
 sudo journalctl -u maxi-hand.service -f
+
+# View last 50 lines
+sudo journalctl -u maxi-hand.service -n 50
 ```
 
 ---
@@ -367,22 +419,43 @@ curl -H "X-API-Key: YOUR_API_KEY_HERE" http://localhost:5001/status
 
 ### 2. Remote Test (from your computer)
 
+**Important:** ngrok free tier shows a browser warning page. Bypass it with headers:
+
+```powershell
+# Windows PowerShell - Add ngrok header to bypass warning
+curl -H "ngrok-skip-browser-warning: true" https://98673d610343.ngrok-free.app/health
+
+# Or use Invoke-WebRequest
+$headers = @{"ngrok-skip-browser-warning"="true"}
+Invoke-WebRequest -Uri "https://98673d610343.ngrok-free.app/health" -Headers $headers
+```
+
 ```bash
-# Replace with your ngrok URL or public IP
-curl https://abc123xyz.ngrok-free.app/health
+# Linux/Mac - Add ngrok header to bypass warning
+curl -H "ngrok-skip-browser-warning: true" https://98673d610343.ngrok-free.app/health
 
 # Test with authentication
-curl -H "X-API-Key: YOUR_API_KEY_HERE" https://abc123xyz.ngrok-free.app/status
+curl -H "ngrok-skip-browser-warning: true" -H "X-API-Key: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo" https://98673d610343.ngrok-free.app/status
+```
+
+**Expected response:**
+```json
+{
+  "status": "healthy",
+  "emergency_stop": false,
+  "total_movements": 0,
+  "timestamp": "2026-01-24T..."
+}
 ```
 
 ### 3. Test Finger Movement
 
 ```bash
 curl -X POST \
-  -H "X-API-Key: YOUR_API_KEY_HERE" \
+  -H "X-API-Key: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo" \
   -H "Content-Type: application/json" \
   -d '{"hand":"right","number":3}' \
-  https://abc123xyz.ngrok-free.app/show_number
+  https://1b9723ed6bfa.ngrok-free.app/show_number
 ```
 
 The right hand should show 3 fingers!
@@ -398,12 +471,12 @@ The right hand should show 3 fingers!
 3. Add these variables:
 
 ```
-RASPBERRY_PI_URL=https://abc123xyz.ngrok-free.app
-MAXI_HAND_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
+RASPBERRY_PI_URL=https://1b9723ed6bfa.ngrok-free.app
+MAXI_HAND_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo
 ```
 
 **Important Notes:**
-- `RASPBERRY_PI_URL` is the **ngrok URL** (or your public IP with port)
+- `RASPBERRY_PI_URL` is the **ngrok URL** (no port needed with ngrok!)
 - `MAXI_HAND_API_KEY` must be **exactly the same** on both Pi and Railway
 - If using ngrok free tier, URL changes on restart - update Railway variable each time
 - Consider ngrok paid plan ($8/month) for permanent URL
@@ -552,7 +625,7 @@ When you update `finger_controller_api.py`:
 
 ```bash
 # On your computer
-scp finger_controller_api.py pi@<PI_IP>:~/maxi_hand/
+scp finger_controller_api.py Maxzeeton@192.168.0.154:~/servo_control/
 
 # On Raspberry Pi
 sudo systemctl restart maxi-hand.service
