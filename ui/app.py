@@ -29,7 +29,13 @@ app = Flask(__name__,
             static_folder='static',
             template_folder='templates',
             static_url_path='/static')
-socketio = SocketIO(app, async_mode='threading')
+socketio = SocketIO(app, 
+                   async_mode='threading',
+                   cors_allowed_origins="*",
+                   logger=True,
+                   engineio_logger=False,
+                   ping_timeout=60,
+                   ping_interval=25)
 
 # Register blueprints
 app.register_blueprint(parent_dashboard_bp)
@@ -95,8 +101,12 @@ def start_maxi_ai():
         loop.run_until_complete(run_maxi_ai())
     except asyncio.CancelledError:
         pass
-    finally:
-        loop.close()
+    except Exception as e:
+        print(f"❌ Error in MaxiAI thread: {e}")
+        import traceback
+        traceback.print_exc()
+    # Don't close the loop - keep it open for ongoing socket operations
+    # The loop will be closed during shutdown
 
 
 def initialize_maxi_ai():
@@ -247,12 +257,25 @@ def handle_message(data):
         print('⚠️ Received message before MaxiAI initialized')
         return
 
-    if maxi_ai and maxi_ai.socket_server:
-        # Flask-SocketIO manages the connection, just process the message
-        asyncio.run_coroutine_threadsafe(
-            maxi_ai.socket_server._process_message(None, data),
-            maxi_ai.loop
-        )
+    if maxi_ai and maxi_ai.socket_server and maxi_ai.loop:
+        # Check if loop is still running
+        if maxi_ai.loop.is_closed():
+            print('❌ Event loop is closed - restarting MaxiAI thread')
+            initialize_maxi_ai()
+            return
+        
+        try:
+            # Flask-SocketIO manages the connection, just process the message
+            future = asyncio.run_coroutine_threadsafe(
+                maxi_ai.socket_server._process_message(None, data),
+                maxi_ai.loop
+            )
+            # Wait for completion with timeout
+            future.result(timeout=30)
+        except Exception as e:
+            print(f'❌ Error processing message: {e}')
+            import traceback
+            traceback.print_exc()
     else:
         print('⚠️ MaxiAI or socket_server not available')
 
