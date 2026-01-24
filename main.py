@@ -916,7 +916,9 @@ class MaxiAI:
         try:
             while self.current_mode != AppMode.IDLE and not self.shutdown_requested:
                 try:
+                    log_info(f"⏳ [{state_name}] Waiting for wake trigger...")
                     trigger = await self._wait_for_wake_trigger()
+                    log_info(f"🎯 [{state_name}] Received trigger: {trigger}")
                 except asyncio.CancelledError:
                     log_info(f"Mode loop cancelled externally: {state_name}")
                     break
