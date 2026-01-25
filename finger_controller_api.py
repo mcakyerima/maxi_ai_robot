@@ -29,7 +29,8 @@ app = Flask(__name__)
 
 # --- Security Configuration ---
 # API Key for authentication (load from environment variable)
-API_KEY = os.getenv("MAXI_HAND_API_KEY", "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6")
+API_KEY = os.getenv("MAXI_HAND_API_KEY",
+                    "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6")
 
 # Simulation mode (for testing without hardware)
 SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
@@ -151,7 +152,7 @@ class EnhancedFingerControllerAPI:
             system_status["simulation_mode"] = True
             system_status["startup_time"] = datetime.now().isoformat()
             return True
-        
+
         try:
             print("🔧 Initializing PCA9685 hardware controller...")
 

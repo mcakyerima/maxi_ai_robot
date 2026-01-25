@@ -422,12 +422,14 @@ curl -H "X-API-Key: YOUR_API_KEY_HERE" http://localhost:5001/status
 **Important:** ngrok free tier shows a browser warning page. Bypass it with headers:
 
 ```powershell
-# Windows PowerShell - Add ngrok header to bypass warning
-curl -H "ngrok-skip-browser-warning: true" https://98673d610343.ngrok-free.app/health
+# Windows PowerShell - Add ngrok header to bypass warning (CORRECT SYNTAX)
+curl -Headers @{"ngrok-skip-browser-warning"="true"} https://98673d610343.ngrok-free.app/health
 
-# Or use Invoke-WebRequest
-$headers = @{"ngrok-skip-browser-warning"="true"}
-Invoke-WebRequest -Uri "https://98673d610343.ngrok-free.app/health" -Headers $headers
+# Or use Invoke-WebRequest with full syntax
+Invoke-WebRequest -Uri "https://98673d610343.ngrok-free.app/health" -Headers @{"ngrok-skip-browser-warning"="true"}
+
+# With authentication:
+curl -Headers @{"ngrok-skip-browser-warning"="true"; "X-API-Key"="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6echo"} https://98673d610343.ngrok-free.app/status
 ```
 
 ```bash

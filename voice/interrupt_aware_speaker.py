@@ -32,11 +32,11 @@ class InterruptAwareTTSEngine:
         self.voice = "en-US-EmmaNeural"
         self.rate = "+0%"
         self.pitch = "-2Hz"
-        
+
         # Fallback voices in case primary voice fails
         self.fallback_voices = [
             "en-US-AriaNeural",
-            "en-US-JennyNeural", 
+            "en-US-JennyNeural",
             "en-GB-SoniaNeural",
             "en-US-GuyNeural"
         ]
@@ -324,7 +324,7 @@ class InterruptAwareTTSEngine:
         except Exception as e:
             error_msg = str(e)
             log_error(f"TTS Error with voice '{self.voice}': {e}")
-            
+
             # Handle 403 Forbidden errors (rate limiting) with retry and fallback
             if "403" in error_msg or "Invalid response status" in error_msg:
                 if retry_count < max_retries:
@@ -332,14 +332,18 @@ class InterruptAwareTTSEngine:
                     if retry_count == 1 and self.current_voice_index < len(self.fallback_voices):
                         self.voice = self.fallback_voices[self.current_voice_index]
                         self.current_voice_index += 1
-                        log_warning(f"🔄 Switching to fallback voice: {self.voice}")
-                    
-                    delay = retry_delay[retry_count] if retry_count < len(retry_delay) else 5
-                    log_warning(f"⚠️ Edge TTS rate limited (403). Retrying in {delay}s... (attempt {retry_count + 1}/{max_retries})")
+                        log_warning(
+                            f"🔄 Switching to fallback voice: {self.voice}")
+
+                    delay = retry_delay[retry_count] if retry_count < len(
+                        retry_delay) else 5
+                    log_warning(
+                        f"⚠️ Edge TTS rate limited (403). Retrying in {delay}s... (attempt {retry_count + 1}/{max_retries})")
                     await asyncio.sleep(delay)
                     return await self.speak_text(text, interruptible, retry_count + 1)
                 else:
-                    log_error(f"❌ Edge TTS failed after {max_retries} retries. Text displayed but not spoken.")
+                    log_error(
+                        f"❌ Edge TTS failed after {max_retries} retries. Text displayed but not spoken.")
                     # At least the text is shown in the UI, so user can read it
                     if self.socket_server:
                         await self.socket_server.emit_error("Voice unavailable - please read the text response")

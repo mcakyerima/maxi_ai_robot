@@ -803,6 +803,7 @@ class MaxiAI:
 
         # Main event loop
         try:
+            log_info("🔄 Starting main event loop (showcase mode - detailed logging enabled)")
             while not self.shutdown_requested:
                 # If idle, allow listening for a wake-word (and default to last selected mode)
                 if self.current_mode == AppMode.IDLE:
@@ -898,11 +899,21 @@ class MaxiAI:
             # End of main loop
             log_info(f"🛑 Main loop exited (shutdown_requested={self.shutdown_requested})")
         except asyncio.CancelledError:
-            log_info("Main run loop cancelled")
+            log_info("🚫 Main run loop cancelled")
+        except KeyboardInterrupt:
+            log_info("⏹️ Keyboard interrupt received")
         except Exception as e:
-            log_error(
-                f"Unexpected error in main loop: {e}\n{traceback.format_exc()}")
+            log_error(f"❌ CRITICAL SHOWCASE ERROR in main loop: {e}")
+            log_error(f"📊 Full traceback:\n{traceback.format_exc()}")
+            # Try to emit error state to UI
+            try:
+                await self.socket_server.emit_error(f"System error: {str(e)[:100]}")
+            except:
+                pass
         finally:
+            # Reset speaking flag on exit
+            if hasattr(self, '_is_speaking'):
+                self._is_speaking = False
             # final cleanup before exit
             log_info("🧹 Starting cleanup...")
             await self.cleanup()
@@ -1290,13 +1301,21 @@ class MaxiAI:
 
             # Set speaking state and play greeting
             await self.socket_server.emit_state_change("speaking")
-            log_info("🗣️ Playing math greeting...")
+            log_info(f"🗣️ Playing math greeting: '{greeting}' (showcase mode)")
 
             try:
-                await self.tts_engine.speak_text(greeting, interruptible=False)
-                await asyncio.sleep(0.5)  # Ensure TTS completion
+                # GUARD: Check if already speaking to prevent duplicates
+                if hasattr(self, '_is_speaking') and self._is_speaking:
+                    log_warning("⚠️ Already speaking, skipping duplicate greeting")
+                else:
+                    self._is_speaking = True
+                    await self.tts_engine.speak_text(greeting, interruptible=False)
+                    await asyncio.sleep(0.5)  # Ensure TTS completion
+                    self._is_speaking = False
+                    log_info("✅ Math greeting completed successfully")
             except Exception as e:
-                log_warning(f"TTS greeting failed: {e}")
+                self._is_speaking = False
+                log_error(f"❌ TTS greeting failed: {e}\n{traceback.format_exc()}")
 
             # Set listening state
             await self.socket_server.emit_state_change("listening")
@@ -1356,7 +1375,9 @@ class MaxiAI:
                             log_info(f"✅ Math problem solved successfully")
 
                     except Exception as e:
-                        log_error(f"Math handler error: {e}")
+                        log_error(f"❌ CRITICAL: Math handler error during showcase: {e}")
+                        log_error(f"📊 Error traceback:\n{traceback.format_exc()}")
+                        log_error(f"📝 User input was: '{user_text}'")
                         fallback_response = "I had trouble with that math problem. Can you try asking in a different way?"
                         await self.socket_server.emit_state_change("speaking")
                         await self.tts_engine.speak_text(fallback_response)
@@ -1369,14 +1390,29 @@ class MaxiAI:
                 log_info("⏰ Math/Gesture transcription timeout")
                 await self.socket_server.emit_state_change("speaking")
                 await self.tts_engine.speak_text("I didn't hear anything. Press the button when you're ready!")
+                # Reset duplicate guards on timeout
+                if hasattr(self, '_is_speaking'):
+                    self._is_speaking = False
+                if hasattr(self.tts_engine, '_last_spoken_text'):
+                    self.tts_engine._last_spoken_text = None
 
             except Exception as e:
                 log_error(f"Math/Gesture transcription error: {e}")
                 await self.socket_server.emit_state_change("speaking")
                 await self.tts_engine.speak_text("Sorry, I had a problem listening. Please try again.")
+                # Reset duplicate guards on error
+                if hasattr(self, '_is_speaking'):
+                    self._is_speaking = False
+                if hasattr(self.tts_engine, '_last_spoken_text'):
+                    self.tts_engine._last_spoken_text = None
 
         except Exception as e:
             log_error(f"Math/Gesture interaction error: {e}")
+            # Reset duplicate guards on major error
+            if hasattr(self, '_is_speaking'):
+                self._is_speaking = False
+            if hasattr(self.tts_engine, '_last_spoken_text'):
+                self.tts_engine._last_spoken_text = None
             try:
                 await self.socket_server.emit_state_change("speaking")
                 await self.tts_engine.speak_text("Sorry, something went wrong. Let me get ready again.")

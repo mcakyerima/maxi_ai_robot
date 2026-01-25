@@ -114,7 +114,7 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
         chunk_count = 0
         max_retries = 2
         retry_count = 0
-        
+
         # Track when to start speaking (after first complete sentence)
         sentence_buffer = ""
         speaking_started = False
@@ -156,24 +156,26 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                         full_response += delta
                         sentence_buffer += delta
                         chunk_count += 1
-                        
+
                         # Start TTS as soon as we have a complete sentence
                         if any(punct in sentence_buffer for punct in ['. ', '! ', '? ', '\n\n']):
                             # Found complete sentence
                             complete_sentence = sentence_buffer.strip()
-                            
+
                             if not speaking_started:
                                 # First sentence - start speaking immediately
-                                log_info(f"🎤 Starting speaking after first sentence ({len(complete_sentence)} chars)")
+                                log_info(
+                                    f"🎤 Starting speaking after first sentence ({len(complete_sentence)} chars)")
                                 await socket.emit_state_change("speaking")
                                 speaking_started = True
-                                
+
                                 # Start TTS for first sentence (track the task)
-                                speaking_task = asyncio.create_task(tts_engine.speak_text(complete_sentence))
+                                speaking_task = asyncio.create_task(
+                                    tts_engine.speak_text(complete_sentence))
                             else:
                                 # Subsequent sentences - queue them for later
                                 sentences_to_speak.append(complete_sentence)
-                            
+
                             sentence_buffer = ""  # Clear for next sentence
 
                 # If we got a response, break out of retry loop
@@ -233,16 +235,18 @@ async def handle_llm(prompt: str, tts_engine: SmoothTTSEngine, socket: SocketSer
                 # Wait for first sentence to finish speaking
                 log_info("⏳ Waiting for first sentence to complete...")
                 await speaking_task
-                
+
                 # Now speak all queued sentences
                 if sentences_to_speak:
-                    log_info(f"🎤 Speaking {len(sentences_to_speak)} remaining sentences")
+                    log_info(
+                        f"🎤 Speaking {len(sentences_to_speak)} remaining sentences")
                     for sentence in sentences_to_speak:
                         await tts_engine.speak_text(sentence)
-                
+
                 # Speak any remaining text that wasn't a complete sentence
                 if sentence_buffer.strip():
-                    log_info(f"🎤 Speaking final incomplete sentence ({len(sentence_buffer)} chars)")
+                    log_info(
+                        f"🎤 Speaking final incomplete sentence ({len(sentence_buffer)} chars)")
                     await tts_engine.speak_text(sentence_buffer.strip())
             else:
                 # Very short response (no complete sentences during streaming)

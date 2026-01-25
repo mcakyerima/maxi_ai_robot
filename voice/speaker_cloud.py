@@ -119,6 +119,14 @@ class CloudTTSEngine:
         """
         if not text.strip():
             return
+        
+        # GUARD: Prevent duplicate speech - check if same text is already being spoken
+        if hasattr(self, '_last_spoken_text') and self._last_spoken_text == text:
+            log_warning(f"🚫 Duplicate speech prevented: '{text[:50]}...'")
+            return
+        
+        # Track last spoken text to prevent duplicates
+        self._last_spoken_text = text
 
         # Format text for natural speech with proper pauses
         formatted_text = format_text_for_natural_speech(text)
@@ -152,9 +160,19 @@ class CloudTTSEngine:
                 playback_complete = asyncio.Event()
                 await self.audio_queue.put((audio_stream, playback_complete))
                 await playback_complete.wait()  # Wait until audio is streamed
+                
+                # Clear duplicate guard after successful speech (but keep for 2 seconds)
+                async def clear_guard():
+                    await asyncio.sleep(2.0)  # 2 second cooldown
+                    if hasattr(self, '_last_spoken_text'):
+                        self._last_spoken_text = None
+                asyncio.create_task(clear_guard())
 
         except Exception as e:
             log_error(f"TTS Error: {e}")
+            # Clear guard on error to allow retry
+            if hasattr(self, '_last_spoken_text'):
+                self._last_spoken_text = None
 
     async def process_stream(self, text_stream: AsyncIterable[str]):
         """
