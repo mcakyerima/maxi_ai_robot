@@ -29,13 +29,13 @@ app = Flask(__name__,
             static_folder='static',
             template_folder='templates',
             static_url_path='/static')
-socketio = SocketIO(app, 
-                   async_mode='threading',
-                   cors_allowed_origins="*",
-                   logger=True,
-                   engineio_logger=False,
-                   ping_timeout=60,
-                   ping_interval=25)
+socketio = SocketIO(app,
+                    async_mode='threading',
+                    cors_allowed_origins="*",
+                    logger=True,
+                    engineio_logger=False,
+                    ping_timeout=60,
+                    ping_interval=25)
 
 # Register blueprints
 app.register_blueprint(parent_dashboard_bp)
@@ -57,9 +57,11 @@ async def run_maxi_ai():
     """Run MaxiAI main loop"""
     global maxi_ai
     try:
+        print("🚀 Creating MaxiAI instance...")
         maxi_ai = MaxiAIWrapper()
         maxi_ai.loop = asyncio.get_event_loop()
 
+        print("🎯 Starting MaxiAI.run() task...")
         # Start the main run loop (includes initialization)
         run_task = asyncio.create_task(maxi_ai.run())
 
@@ -79,7 +81,18 @@ async def run_maxi_ai():
         print("✅ MaxiAI initialization complete")
 
         # Keep the loop running - wait for shutdown or run_task completion
-        await asyncio.gather(run_task, return_exceptions=True)
+        print("⏳ Waiting for MaxiAI run() task to complete...")
+        result = await asyncio.gather(run_task, return_exceptions=True)
+        
+        # If we get here, run_task completed (which shouldn't happen normally)
+        if result:
+            print(f"⚠️ MaxiAI run() task completed with result: {result}")
+            if isinstance(result[0], Exception):
+                print(f"❌ MaxiAI run() failed with exception: {result[0]}")
+                import traceback
+                traceback.print_exception(type(result[0]), result[0], result[0].__traceback__)
+            else:
+                print(f"ℹ️ MaxiAI run() exited normally (unexpected)")
 
     except Exception as e:
         print(f"❌ Error in MaxiAI initialization: {e}")
@@ -95,7 +108,7 @@ def start_maxi_ai():
     try:
         # Run MaxiAI and keep the loop running
         loop.run_until_complete(run_maxi_ai())
-        
+
         # If run_maxi_ai completes, keep loop running for socket operations
         print("⚠️ MaxiAI run() completed, keeping loop alive for sockets")
         loop.run_forever()
@@ -110,7 +123,8 @@ def start_maxi_ai():
         pending = asyncio.all_tasks(loop)
         for task in pending:
             task.cancel()
-        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.run_until_complete(asyncio.gather(
+            *pending, return_exceptions=True))
         print("✅ MaxiAI event loop shut down cleanly")
 
 
@@ -268,7 +282,7 @@ def handle_message(data):
             print('❌ Event loop is closed - restarting MaxiAI thread')
             initialize_maxi_ai()
             return
-        
+
         try:
             # Flask-SocketIO manages the connection, just process the message
             future = asyncio.run_coroutine_threadsafe(

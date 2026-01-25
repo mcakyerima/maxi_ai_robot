@@ -879,7 +879,8 @@ class MaxiAI:
                 if self.shutdown_requested:
                     break
 
-                log_info(f"📍 Checking mode for loop execution: {self.current_mode.name}")
+                log_info(
+                    f"📍 Checking mode for loop execution: {self.current_mode.name}")
                 if self.current_mode == AppMode.GENERAL_CHAT:
                     log_info("➡️ Calling _run_mode_loop for GENERAL_CHAT")
                     await self._run_mode_loop(self._handle_general_chat_interaction, "general_chat_active")
@@ -890,10 +891,12 @@ class MaxiAI:
                     log_info("⬅️ Returned from MATH_GESTURE mode loop")
                 else:
                     # Unknown mode: sleep briefly and continue
-                    log_info(f"⚠️ Unknown or IDLE mode: {self.current_mode.name}, sleeping...")
+                    log_info(
+                        f"⚠️ Unknown or IDLE mode: {self.current_mode.name}, sleeping...")
                     await asyncio.sleep(0.1)
 
             # End of main loop
+            log_info(f"🛑 Main loop exited (shutdown_requested={self.shutdown_requested})")
         except asyncio.CancelledError:
             log_info("Main run loop cancelled")
         except Exception as e:
@@ -901,7 +904,9 @@ class MaxiAI:
                 f"Unexpected error in main loop: {e}\n{traceback.format_exc()}")
         finally:
             # final cleanup before exit
+            log_info("🧹 Starting cleanup...")
             await self.cleanup()
+            log_info("✅ Cleanup complete")
 
     # ---------------------------
     # Mode loop: continuous listening within a mode
