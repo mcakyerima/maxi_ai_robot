@@ -705,9 +705,9 @@ class MaxiAI:
         # Finger controller details
         if self.finger_controller:
             finger_info = self.finger_controller.get_connection_info()
-            if finger_info["hardware_available"]:
-                log_info(
-                    f"   🤚 Hardware Details: {finger_info['pi_ip']}:{finger_info['pi_port']}")
+            if finger_info.get("hardware_available"):
+                pi_url = finger_info.get('pi_url', 'Unknown')
+                log_info(f"   🤚 Hardware Details: {pi_url}")
             else:
                 error_msg = finger_info.get(
                     'last_error', 'Manual simulation mode')
