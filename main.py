@@ -782,8 +782,10 @@ class MaxiAI:
             - responding to wake-word while in IDLE
             - immediate shutdown on Ctrl+C
         """
+        log_info("🚀 Starting MaxiAI main run() loop")
         # initialize components
         await self.initialize()
+        log_info("✅ MaxiAI initialization complete, entering main loop")
 
         # Register Ctrl+C handler - try to be cross-platform
         try:
@@ -877,12 +879,18 @@ class MaxiAI:
                 if self.shutdown_requested:
                     break
 
+                log_info(f"📍 Checking mode for loop execution: {self.current_mode.name}")
                 if self.current_mode == AppMode.GENERAL_CHAT:
+                    log_info("➡️ Calling _run_mode_loop for GENERAL_CHAT")
                     await self._run_mode_loop(self._handle_general_chat_interaction, "general_chat_active")
+                    log_info("⬅️ Returned from GENERAL_CHAT mode loop")
                 elif self.current_mode == AppMode.MATH_GESTURE:
+                    log_info("➡️ Calling _run_mode_loop for MATH_GESTURE")
                     await self._run_mode_loop(self._handle_math_gesture_interaction, "math_gesture_active")
+                    log_info("⬅️ Returned from MATH_GESTURE mode loop")
                 else:
                     # Unknown mode: sleep briefly and continue
+                    log_info(f"⚠️ Unknown or IDLE mode: {self.current_mode.name}, sleeping...")
                     await asyncio.sleep(0.1)
 
             # End of main loop
