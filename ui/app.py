@@ -7,12 +7,16 @@ import io
 import asyncio
 import signal
 import threading
+import logging
 from pathlib import Path
 from types import FrameType
 from typing import Optional
 from flask import Flask, render_template, send_from_directory, jsonify, make_response
 from flask_socketio import SocketIO
 from threading import Thread
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Fix emoji encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -56,12 +60,16 @@ maxi_initialized = threading.Event()  # Event to signal when MaxiAI is ready
 async def run_maxi_ai():
     """Run MaxiAI main loop"""
     global maxi_ai
+    logger.info("🚀 run_maxi_ai() started")
+    print("🚀 run_maxi_ai() started")
     try:
         print("🚀 Creating MaxiAI instance...")
+        logger.info("🚀 Creating MaxiAI instance...")
         maxi_ai = MaxiAIWrapper()
         maxi_ai.loop = asyncio.get_event_loop()
 
         print("🎯 Starting MaxiAI.run() task...")
+        logger.info("🎯 Starting MaxiAI.run() task...")
         # Start the main run loop (includes initialization)
         run_task = asyncio.create_task(maxi_ai.run())
 
@@ -72,30 +80,30 @@ async def run_maxi_ai():
         # Inject socketio instance after socket_server is created
         if hasattr(maxi_ai, 'socket_server') and maxi_ai.socket_server:
             maxi_ai.socket_server.socketio = socketio
-            print("✅ Socket.IO instance injected into MaxiAI")
+            logger.info("✅ Socket.IO instance injected into MaxiAI")
         else:
-            print("⚠️ Warning: socket_server not found on MaxiAI instance")
+            logger.warning("⚠️ Warning: socket_server not found on MaxiAI instance")
 
         # Signal that MaxiAI is ready
         maxi_initialized.set()
-        print("✅ MaxiAI initialization complete")
+        logger.info("✅ MaxiAI initialization complete")
 
         # Keep the loop running - wait for shutdown or run_task completion
-        print("⏳ Waiting for MaxiAI run() task to complete...")
+        logger.info("⏳ Waiting for MaxiAI run() task to complete...")
         result = await asyncio.gather(run_task, return_exceptions=True)
         
         # If we get here, run_task completed (which shouldn't happen normally)
         if result:
-            print(f"⚠️ MaxiAI run() task completed with result: {result}")
+            logger.warning(f"⚠️ MaxiAI run() task completed with result: {result}")
             if isinstance(result[0], Exception):
-                print(f"❌ MaxiAI run() failed with exception: {result[0]}")
+                logger.error(f"❌ MaxiAI run() failed with exception: {result[0]}")
                 import traceback
                 traceback.print_exception(type(result[0]), result[0], result[0].__traceback__)
             else:
-                print(f"ℹ️ MaxiAI run() exited normally (unexpected)")
+                logger.info(f"ℹ️ MaxiAI run() exited normally (unexpected)")
 
     except Exception as e:
-        print(f"❌ Error in MaxiAI initialization: {e}")
+        logger.error(f"❌ Error in MaxiAI initialization: {e}")
         import traceback
         traceback.print_exc()
         maxi_initialized.set()  # Signal even on error to prevent deadlock
@@ -110,12 +118,12 @@ def start_maxi_ai():
         loop.run_until_complete(run_maxi_ai())
 
         # If run_maxi_ai completes, keep loop running for socket operations
-        print("⚠️ MaxiAI run() completed, keeping loop alive for sockets")
+        logger.warning("⚠️ MaxiAI run() completed, keeping loop alive for sockets")
         loop.run_forever()
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        print(f"❌ Error in MaxiAI thread: {e}")
+        logger.error(f"❌ Error in MaxiAI thread: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -125,23 +133,30 @@ def start_maxi_ai():
             task.cancel()
         loop.run_until_complete(asyncio.gather(
             *pending, return_exceptions=True))
-        print("✅ MaxiAI event loop shut down cleanly")
+        logger.info("✅ MaxiAI event loop shut down cleanly")
 
 
 def initialize_maxi_ai():
     """Initialize and start MaxiAI backend thread"""
     global maxi_thread
+    logger.info("🔧 initialize_maxi_ai() called")
     if maxi_thread is None or not maxi_thread.is_alive():
+        logger.info("🤖 Starting MaxiAI backend thread...")
         print("🤖 Starting MaxiAI backend thread...")
         maxi_thread = Thread(target=start_maxi_ai, daemon=True)
         maxi_thread.start()
 
         # Wait for initialization to complete (with timeout)
+        logger.info("⏳ Waiting for MaxiAI initialization...")
         print("⏳ Waiting for MaxiAI initialization...")
         if maxi_initialized.wait(timeout=30):
+            logger.info("✅ MaxiAI backend ready")
             print("✅ MaxiAI backend ready")
         else:
+            logger.warning("⚠️ MaxiAI initialization timeout - proceeding anyway")
             print("⚠️ MaxiAI initialization timeout - proceeding anyway")
+    else:
+        logger.info(f"ℹ️ MaxiAI thread already running (alive={maxi_thread.is_alive()})")
     return maxi_thread
 
 
@@ -273,13 +288,13 @@ def handle_disconnect():
 def handle_message(data):
     """Forward WebSocket messages to MaxiAI's socket server"""
     if not maxi_initialized.is_set():
-        print('⚠️ Received message before MaxiAI initialized')
+        logger.warning('⚠️ Received message before MaxiAI initialized')
         return
 
     if maxi_ai and maxi_ai.socket_server and maxi_ai.loop:
         # Check if loop is still running
         if maxi_ai.loop.is_closed():
-            print('❌ Event loop is closed - restarting MaxiAI thread')
+            logger.error('❌ Event loop is closed - restarting MaxiAI thread')
             initialize_maxi_ai()
             return
 
@@ -292,7 +307,7 @@ def handle_message(data):
             # Wait for completion with timeout
             future.result(timeout=30)
         except Exception as e:
-            print(f'❌ Error processing message: {e}')
+            logger.error(f'❌ Error processing message: {e}')
             import traceback
             traceback.print_exc()
     else:
