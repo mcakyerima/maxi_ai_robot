@@ -42,6 +42,34 @@
     <!-- Particles.js -->
     <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
 
+    <!-- On-screen diagnostics: show JS errors + missing libraries on the tablet -->
+    <script>
+      (function () {
+        function banner(msg) {
+          var el = document.getElementById("maxi-err");
+          if (!el) {
+            el = document.createElement("div");
+            el.id = "maxi-err";
+            el.style.cssText =
+              "position:fixed;top:0;left:0;right:0;z-index:100000;background:#b00020;" +
+              "color:#fff;font:12px/1.4 monospace;padding:6px 10px;white-space:pre-wrap;max-height:40vh;overflow:auto;";
+            (document.body || document.documentElement).appendChild(el);
+          }
+          el.textContent += msg + "\n";
+        }
+        window.addEventListener("error", function (e) {
+          banner("JS error: " + (e.message || e.type) + (e.filename ? " @ " + e.filename + ":" + e.lineno : ""));
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          banner("Promise rejection: " + (e.reason && e.reason.message ? e.reason.message : e.reason));
+        });
+        window.addEventListener("DOMContentLoaded", function () {
+          if (typeof io === "undefined") banner("socket.io client FAILED to load (io is undefined) — check network/CDN.");
+        });
+        window.__maxiBanner = banner;
+      })();
+    </script>
+
     <style>
       :root {
         --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1238,9 +1266,19 @@
           try {
             // Polling transport — the Flask dev server on Railway can't do raw
             // WebSockets (causes 500s + reconnect churn). Polling is stable here.
+            if (typeof io === "undefined") {
+              if (window.__maxiBanner) window.__maxiBanner("Cannot connect: socket.io client not loaded.");
+              this.updateConnectionStatus(false);
+              return;
+            }
             this.socket = io({
               transports: ["polling"],
               upgrade: false,
+              reconnection: true,
+              reconnectionAttempts: Infinity,
+              reconnectionDelay: 1000,
+              reconnectionDelayMax: 5000,
+              timeout: 20000,
             });
 
             this.socket.on("connect", () => {
@@ -1273,6 +1311,9 @@
 
             this.socket.on("connect_error", (error) => {
               console.error("Socket.IO connection error:", error);
+              if (window.__maxiBanner) {
+                window.__maxiBanner("Socket connect_error: " + (error && error.message ? error.message : error));
+              }
               this.isConnected = false;
               this.updateConnectionStatus(false);
             });

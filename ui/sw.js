@@ -1,71 +1,69 @@
-const CACHE_NAME = 'maxi-ai-v2';
-const PRECACHE_ASSETS = [
-  '/',
-  '/static/css/main.css',
-  '/static/js/app.js',
-  '/static/icons/icon-192x192.png',
-  '/static/icons/icon-512x512.png',
-  '/templates/menu.html',
-  '/templates/math.html',
-  '/templates/chat.html',
-  'https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@400;600;700;800&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
-];
+/**
+ * Maxi PWA service worker (v3) — deliberately minimal and SAFE.
+ *
+ * The old worker was cache-first and intercepted EVERY request — including the
+ * socket.io client CDN and the /socket.io/ realtime transport — which could
+ * break the live connection ("disconnected"). This version:
+ *   - never touches cross-origin requests (CDNs, fonts, socket.io client),
+ *   - never touches /socket.io/ (realtime),
+ *   - is network-first for same-origin GETs (fresh app after every deploy),
+ *   - only serves cache as an offline fallback,
+ *   - precaches best-effort (a 404 can't fail the install),
+ *   - deletes the old broken caches on activate.
+ */
+const CACHE = "maxi-ai-v3";
+const SHELL = ["/", "/chat", "/math", "/settings", "/offline"];
 
-// Install Event
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE_ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE).then((cache) =>
+      // allSettled so one missing asset never fails the whole install
+      Promise.allSettled(SHELL.map((url) => cache.add(url)))
+    )
   );
 });
 
-// Activate Event
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch Event
-self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return; // let POST etc. go straight to network
 
+  let url;
+  try {
+    url = new URL(req.url);
+  } catch (e) {
+    return;
+  }
+  // Never intervene on other origins (CDNs, fonts, socket.io client) or on the
+  // realtime transport — let the browser handle those directly.
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/socket.io")) return;
+
+  // Network-first; fall back to cache only when the network is unavailable.
   event.respondWith(
-    caches.match(event.request)
-      .then(cachedResponse => {
-        // Return cached response if found
-        if (cachedResponse) {
-          return cachedResponse;
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {});
         }
-
-        // Otherwise fetch from network
-        return fetch(event.request)
-          .then(response => {
-            // Cache dynamic pages
-            if (event.request.url.includes('/templates/')) {
-              const responseClone = response.clone();
-              caches.open(CACHE_NAME)
-                .then(cache => cache.put(event.request, responseClone));
-            }
-            return response;
-          })
-          .catch(() => {
-            // Fallback for HTML pages
-            if (event.request.headers.get('accept').includes('text/html')) {
-              return caches.match('/templates/menu.html');
-            }
-          });
+        return res;
       })
+      .catch(() =>
+        caches.match(req).then(
+          (cached) =>
+            cached ||
+            (req.mode === "navigate" ? caches.match("/offline") : Response.error())
+        )
+      )
   );
 });
