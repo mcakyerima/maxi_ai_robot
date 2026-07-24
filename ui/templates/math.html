@@ -1080,7 +1080,11 @@
                             type: "math_gesture_wake",
                             timestamp: new Date().toISOString()
                         });
-                        
+
+                        // Start listening locally right away so the tap feels instant.
+                        this.voiceEngine.setMode('CAPTURE');
+                        this.updateVoiceStatus('Listening...', true);
+
                         console.log('📡 Wake signal sent to server');
                     } catch (error) {
                         console.error('Failed to send wake signal:', error);

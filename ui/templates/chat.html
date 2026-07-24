@@ -1172,6 +1172,12 @@
                 timestamp: new Date().toISOString(),
               });
 
+              // Start listening locally right away so the tap feels instant
+              // (don't wait for the server round-trip over polling).
+              this.voiceEngine.setMode("CAPTURE");
+              this.updateVoiceStatus("Listening...", true);
+              this.updateMicButton("listening");
+
               console.log("📡 Wake signal sent to server");
             } catch (error) {
               console.error("Failed to send wake signal:", error);
