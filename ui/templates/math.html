@@ -897,6 +897,9 @@
     <!-- Cloud Audio Player Script -->
     <script src="/static/js/audio_player.js"></script>
 
+    <!-- Maxi Voice Engine: continuous "Hey Maxi" wake + self-echo-safe barge-in -->
+    <script src="/static/js/maxi_voice_engine.js"></script>
+
     <!-- Main Application Script -->
     <script>
         class MathPWA {
@@ -919,48 +922,43 @@
                 this.rightHand = document.getElementById('rightHand');
                 this.backButton = document.getElementById('backButton');
                 this.celebration = document.getElementById('celebration');
-                // Initialize Web Speech transcriber
-                this.transcriber = new WebSpeechTranscriber(null); // Will be set after socket init
-                
+                // Voice engine owns the mic: continuous "Hey Maxi" wake + self-echo-safe
+                // barge-in. Old transcriber kept as a no-op shim for legacy call sites.
+                this.voiceEngine = this.buildVoiceEngine();
+                this.transcriber = {
+                    isListening: false,
+                    socket: null,
+                    startListening: async () => true,
+                    stopListening: () => {}
+                };
+
                 // Initialize audio player for cloud TTS
                 this.audioPlayer = new SimpleAudioPlayer();
                 this.audioPlayer.initialize();
-                
-                // Audio event callbacks - inform backend of actual playback state
+
+                // Audio callbacks - inform backend AND steer the voice engine's mode.
                 this.audioPlayer.onAudioStart = () => {
-                    console.log('🔊 Audio playback started - notifying backend');
                     if (this.socket && this.socket.connected) {
                         this.socket.emit('message', {
                             type: "audio_started",
                             timestamp: new Date().toISOString()
                         });
                     }
+                    this.voiceEngine.setMode('BARGE_IN');
                 };
-                
+
                 this.audioPlayer.onAudioComplete = () => {
-                    console.log('🎵 Audio finished - notifying backend');
                     if (this.socket && this.socket.connected) {
                         this.socket.emit('message', {
                             type: "audio_complete",
                             timestamp: new Date().toISOString()
                         });
                     }
-                    
-                    // Auto-start microphone if in listening state
-                    if (this.currentStage === 'listening' && !this.transcriber.isListening) {
-                        console.log('✅ Auto-starting microphone after audio');
-                        this.transcriber.startListening().then(started => {
-                            if (started) {
-                                console.log('Microphone started successfully');
-                            } else {
-                                console.error('Failed to start microphone');
-                            }
-                        });
-                    }
+                    this.voiceEngine.clearScript();
+                    this.voiceEngine.setMode(this.currentStage === 'listening' ? 'CAPTURE' : 'WAKE');
                 };
-                
+
                 this.audioPlayer.onAudioInterrupted = () => {
-                    console.log('⏸️ Audio interrupted - notifying backend');
                     if (this.socket && this.socket.connected) {
                         this.socket.emit('message', {
                             type: "audio_interrupted",
@@ -977,6 +975,45 @@
                 this.initWebSocket();
                 this.requestFullscreen();
                 this.setLandscapeOrientation();
+            }
+
+            // --- Voice engine (wake word + self-echo-safe barge-in) ---
+            buildVoiceEngine() {
+                if (typeof MaxiVoiceEngine === 'undefined') {
+                    console.warn('MaxiVoiceEngine not loaded - mic button only');
+                    return { setMode() {}, setScript() {}, clearScript() {}, start() {}, stop() {}, isSupported: () => false };
+                }
+                return new MaxiVoiceEngine({
+                    onWake: () => this.handleVoiceWake(),
+                    onUtterance: (text) => this.handleVoiceUtterance(text),
+                    onInterrupt: () => this.handleVoiceInterrupt(),
+                    onInterim: (text) => { if (text) this.updateVoiceStatus('Listening: ' + text, true); },
+                    onError: (e) => console.warn('Voice engine:', e)
+                });
+            }
+
+            handleVoiceWake() {
+                if (!this.isConnected || this.currentStage === 'speaking') return;
+                console.log('🎙️ Wake word heard - waking Maxi (math)');
+                this.socket.emit('message', { type: "math_gesture_wake", timestamp: new Date().toISOString() });
+            }
+
+            handleVoiceUtterance(text) {
+                if (!this.isConnected || !text) return;
+                console.log('🗣️ Heard:', text);
+                this.socket.emit('message', {
+                    type: "user_transcription", text: text, confidence: 0.9,
+                    timestamp: new Date().toISOString()
+                });
+            }
+
+            handleVoiceInterrupt() {
+                console.log('🛑 Voice barge-in - stopping Maxi (math)');
+                this.audioPlayer.stop();
+                this.currentStage = 'interrupted';
+                if (this.socket && this.socket.connected) {
+                    this.socket.emit('message', { type: "interrupted", timestamp: new Date().toISOString() });
+                }
             }
 
             setupEventListeners() {
@@ -1119,6 +1156,10 @@
 
                         // Set socket reference for transcriber
                         this.transcriber.socket = this.socket;
+
+                        // Start always-on wake-word / barge-in listening.
+                        this.voiceEngine.start();
+                        this.voiceEngine.setMode('WAKE');
                     });
                     
                     // Handle general messages
@@ -1230,6 +1271,10 @@
                     case 'audio_chunk':
                         this.handleAudioChunk(data);
                         break;
+                    case 'speaking_script':
+                        // Let the voice engine know Maxi's live words for echo rejection.
+                        if (this.voiceEngine && data.text) this.voiceEngine.setScript(data.text);
+                        break;
                     case 'error':
                         this.showError(data.message);
                         break;
@@ -1263,20 +1308,33 @@
                         // FIXED: Ensure mic button is properly reset
                         this.micButton.disabled = false;
                         this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                        this.voiceEngine.setMode('WAKE');
                         break;
-                        
+
+                    case 'thinking':
+                        this.updateVoiceStatus('Thinking...', false);
+                        this.updateStatus('Solving your math problem...');
+                        this.micButton.innerHTML = '<div class="loading-spinner"></div>';
+                        this.micButton.disabled = true;
+                        this.voiceEngine.setMode('OFF');
+                        break;
+
+                    case 'interrupted':
+                        this.updateVoiceStatus('Yes?', true);
+                        this.updateStatus("I'm listening...");
+                        this.micButton.disabled = false;
+                        this.micButton.innerHTML = '<i class="fas fa-microphone listening"></i>';
+                        break;
+
                     case 'speaking':
                         this.updateVoiceStatus('Speaking...', false);
                         this.updateStatus('Listen to my greeting...');
                         this.micButton.innerHTML = '<i class="fas fa-hand-paper"></i>';
                         this.micButton.disabled = false; // Allow interruption during speaking
-                        
-                        // Ensure transcriber is stopped
-                        if (this.transcriber.isListening) {
-                            this.transcriber.stopListening();
-                        }
+                        // While Maxi talks, listen ONLY for barge-in trigger words.
+                        this.voiceEngine.setMode('BARGE_IN');
                         break;
-                        
+
                     case 'listening':
                         this.updateVoiceStatus('Listening...', true);
                         this.updateStatus('Ask me a math question...');
@@ -1287,37 +1345,16 @@
                         // The audioPlayer.onAudioComplete callback will start the mic
                         console.log('📡 Listening state active, waiting for audio to complete...');
                         
-                        // Only start mic if no audio is playing
-                        if (!this.audioPlayer.isPlaying) {
-                            console.log('✅ No audio playing, starting mic immediately');
-                            setTimeout(() => {
-                                if (this.currentStage === 'listening' && !this.transcriber.isListening) {
-                                    this.transcriber.startListening().then(started => {
-                                        if (started) {
-                                            console.log('Transcription started successfully');
-                                        } else {
-                                            this.showError('Could not start voice recognition');
-                                            this.updateVoiceStatus('Ready to Listen!', false);
-                                            this.updateStatus('Ready to Calculate!');
-                                            this.micButton.disabled = false;
-                                            this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
-                                        }
-                                    });
-                                }
-                            }, 100);
-                        }
+                        // Capture the child now — unless tail audio is still playing.
+                        this.voiceEngine.setMode(this.audioPlayer.isPlaying ? 'BARGE_IN' : 'CAPTURE');
                         break;
-                        
+
                     case 'processing':
                         this.updateVoiceStatus('Processing...', false);
                         this.updateStatus('Solving your math problem...');
                         this.micButton.innerHTML = '<div class="loading-spinner"></div>';
                         this.micButton.disabled = true;
-                        
-                        // Stop listening immediately
-                        if (this.transcriber.isListening) {
-                            this.transcriber.stopListening();
-                        }
+                        this.voiceEngine.setMode('OFF');
                         break;
                         
                     case 'show_operand_a':
@@ -1336,6 +1373,7 @@
                     case 'idle':
                         this.clearFingers();
                         this.resetUIState();
+                        this.voiceEngine.setMode('WAKE');
                         break;
                 }
             }

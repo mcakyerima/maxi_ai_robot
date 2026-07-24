@@ -965,6 +965,9 @@
     <!-- Cloud Audio Player Script -->
     <script src="/static/js/audio_player.js"></script>
 
+    <!-- Maxi Voice Engine: continuous "Hey Maxi" wake + self-echo-safe barge-in -->
+    <script src="/static/js/maxi_voice_engine.js"></script>
+
     <!-- Main Application Script -->
     <script>
       class ChatPWA {
@@ -989,51 +992,48 @@
           this.currentStreamingMessage = null;
           this.streamingBuffer = "";
 
-          // Initialize Web Speech transcriber
-          this.transcriber = new WebSpeechTranscriber(null);
+          // The Maxi voice engine now owns the microphone: continuous "Hey Maxi"
+          // wake word + self-echo-safe voice barge-in. The old transcriber is
+          // kept as a harmless no-op shim so legacy call sites don't break.
+          this.voiceEngine = this.buildVoiceEngine();
+          this.transcriber = {
+            isListening: false,
+            socket: null,
+            startListening: async () => true,
+            stopListening: () => {},
+          };
 
           // Initialize audio player for cloud TTS
           this.audioPlayer = new SimpleAudioPlayer();
           this.audioPlayer.initialize();
 
-          // Audio event callbacks - inform backend of actual playback state
+          // Audio callbacks - inform backend AND steer the voice engine's mode.
           this.audioPlayer.onAudioStart = () => {
-            console.log("🔊 Audio playback started - notifying backend");
             if (this.socket && this.socket.connected) {
               this.socket.emit("message", {
                 type: "audio_started",
                 timestamp: new Date().toISOString(),
               });
             }
+            // Maxi is audibly speaking → listen only for barge-in trigger words.
+            this.voiceEngine.setMode("BARGE_IN");
           };
 
           this.audioPlayer.onAudioComplete = () => {
-            console.log("🎵 Audio finished - notifying backend");
             if (this.socket && this.socket.connected) {
               this.socket.emit("message", {
                 type: "audio_complete",
                 timestamp: new Date().toISOString(),
               });
             }
-
-            // Auto-start microphone if in listening state
-            if (
-              this.currentStage === "listening" &&
-              !this.transcriber.isListening
-            ) {
-              console.log("✅ Auto-starting microphone after audio");
-              this.transcriber.startListening().then((started) => {
-                if (started) {
-                  console.log("Microphone started successfully");
-                } else {
-                  console.error("Failed to start microphone");
-                }
-              });
-            }
+            this.voiceEngine.clearScript();
+            // Maxi finished talking: capture the child if listening, else await wake.
+            this.voiceEngine.setMode(
+              this.currentStage === "listening" ? "CAPTURE" : "WAKE",
+            );
           };
 
           this.audioPlayer.onAudioInterrupted = () => {
-            console.log("⏸️ Audio interrupted - notifying backend");
             if (this.socket && this.socket.connected) {
               this.socket.emit("message", {
                 type: "audio_interrupted",
@@ -1051,6 +1051,59 @@
           this.initWebSocket();
           this.requestFullscreen();
           this.setLandscapeOrientation();
+        }
+
+        // --- Voice engine (wake word + self-echo-safe barge-in) -------------
+        buildVoiceEngine() {
+          if (typeof MaxiVoiceEngine === "undefined") {
+            console.warn("MaxiVoiceEngine not loaded - mic button only");
+            return {
+              setMode() {}, setScript() {}, clearScript() {},
+              start() {}, stop() {}, isSupported: () => false,
+            };
+          }
+          return new MaxiVoiceEngine({
+            onWake: () => this.handleVoiceWake(),
+            onUtterance: (text) => this.handleVoiceUtterance(text),
+            onInterrupt: () => this.handleVoiceInterrupt(),
+            onInterim: (text) => {
+              if (text) this.updateVoiceStatus("Listening: " + text, true);
+            },
+            onError: (e) => console.warn("Voice engine:", e),
+          });
+        }
+
+        handleVoiceWake() {
+          if (!this.isConnected || this.currentStage === "speaking") return;
+          console.log("🎙️ Wake word heard - waking Maxi");
+          this.socket.emit("message", {
+            type: "wake_word_detected",
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        handleVoiceUtterance(text) {
+          if (!this.isConnected || !text) return;
+          console.log("🗣️ Heard:", text);
+          this.socket.emit("message", {
+            type: "user_transcription",
+            text: text,
+            confidence: 0.9,
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        handleVoiceInterrupt() {
+          console.log("🛑 Voice barge-in - stopping Maxi");
+          this.audioPlayer.stop();
+          this.currentStage = "interrupted";
+          this.setRobotState("interrupted");
+          if (this.socket && this.socket.connected) {
+            this.socket.emit("message", {
+              type: "interrupted",
+              timestamp: new Date().toISOString(),
+            });
+          }
         }
 
         setupEventListeners() {
@@ -1077,7 +1130,8 @@
               this.isStreamingResponse = false;
 
               // STEP 3: Update UI state immediately
-              this.updateStage("interrupted");
+              this.currentStage = "interrupted";
+              this.setRobotState("interrupted");
 
               // STEP 4: Now notify backend
               this.socket.emit("message", {
@@ -1093,7 +1147,8 @@
               setTimeout(async () => {
                 const started = await this.transcriber.startListening();
                 if (started) {
-                  this.updateStage("listening");
+                  this.currentStage = "listening";
+                  this.setRobotState("listening");
                   console.log("🎤 Microphone reactivated after interrupt");
                 }
               }, 500); // Small delay for clean transition
@@ -1197,6 +1252,10 @@
                 type: "set_mode",
                 mode: "general_chat",
               });
+
+              // Start always-on wake-word / barge-in listening.
+              this.voiceEngine.start();
+              this.voiceEngine.setMode("WAKE");
             });
 
             this.socket.on("disconnect", () => {
@@ -1259,6 +1318,16 @@
             case "audio_chunk":
               this.handleAudioChunk(data);
               break;
+            case "speaking_script":
+              // Tell the voice engine exactly what Maxi is saying now, so it can
+              // reject Maxi's own voice and only barge in on the child.
+              if (this.voiceEngine && data.text) {
+                this.voiceEngine.setScript(data.text);
+              }
+              break;
+            case "finger_pose":
+              // (hand pose mirroring handled on math page)
+              break;
             case "error":
               this.showError(data.message);
               break;
@@ -1281,73 +1350,58 @@
               this.updateVoiceStatus("Ready to Listen!", false);
               this.updateStatus("Ready to Chat!");
               this.updateMicButton("idle");
+              this.voiceEngine.setMode("WAKE");
               break;
 
             case "speaking":
               this.updateVoiceStatus("Speaking...", false);
               this.updateStatus("Listen to my response...");
               this.updateMicButton("speaking");
+              // While Maxi talks, listen ONLY for barge-in trigger words.
+              this.voiceEngine.setMode("BARGE_IN");
+              break;
 
-              // Ensure transcriber is stopped
-              if (this.transcriber.isListening) {
-                this.transcriber.stopListening();
-              }
+            case "thinking":
+              this.updateVoiceStatus("Thinking...", false);
+              this.updateStatus("Thinking about your question...");
+              this.updateMicButton("processing");
+              this.voiceEngine.setMode("OFF");
               break;
 
             case "listening":
               this.updateVoiceStatus("Listening...", true);
               this.updateStatus("Ask me anything...");
               this.updateMicButton("listening");
-
-              // DO NOT auto-start mic here - wait for audio to finish
-              // The audioPlayer.onAudioComplete callback will start the mic
-              console.log(
-                "📡 Listening state active, waiting for audio to complete...",
+              // Capture the child now — unless tail audio is still playing,
+              // in which case stay in barge-in until it finishes.
+              this.voiceEngine.setMode(
+                this.audioPlayer.isPlaying ? "BARGE_IN" : "CAPTURE",
               );
-
-              // Only start mic if no audio is playing
-              if (!this.audioPlayer.isPlaying) {
-                console.log("✅ No audio playing, starting mic immediately");
-                setTimeout(() => {
-                  if (
-                    this.currentStage === "listening" &&
-                    !this.transcriber.isListening
-                  ) {
-                    this.transcriber.startListening().then((started) => {
-                      if (started) {
-                        console.log("Transcription started successfully");
-                      } else {
-                        this.showError("Could not start voice recognition");
-                        this.updateVoiceStatus("Ready to Listen!", false);
-                        this.updateStatus("Ready to Chat!");
-                        this.updateMicButton("idle");
-                      }
-                    });
-                  }
-                }, 100);
-              }
               break;
 
             case "processing":
               this.updateVoiceStatus("Processing...", false);
               this.updateStatus("Thinking about your question...");
               this.updateMicButton("processing");
+              this.voiceEngine.setMode("OFF");
+              break;
 
-              // Stop listening immediately
-              if (this.transcriber.isListening) {
-                this.transcriber.stopListening();
-              }
+            case "interrupted":
+              this.updateVoiceStatus("Yes?", true);
+              this.updateStatus("I'm listening...");
+              this.updateMicButton("listening");
               break;
 
             case "idle":
-              this.updateStatus("Waiting for wake word...");
+              this.updateStatus("Say 'Hey Maxi' to start...");
               this.updateMicButton("idle");
+              this.voiceEngine.setMode("WAKE");
               break;
 
             case "wake":
               // Handle wake greeting if provided and display it immediately
               if (data && data.greeting && data.greeting.text) {
-                this.addMessage("maxi", data.greeting.text, false, true); // streaming = false, immediate = true
+                this.addMessage("maxi", data.greeting.text, false, true);
               }
               break;
           }
@@ -1401,6 +1455,7 @@
               this.robotFace.classList.add("listening-mode");
               break;
             case "processing":
+            case "thinking":
               this.robotFace.classList.add("thinking-mode");
               break;
             case "speaking":

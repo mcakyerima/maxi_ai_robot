@@ -1,179 +1,50 @@
-# ============================================
-# MAXI AI ROBOT - RAILWAY DEPLOYMENT
-# Optimized Dependencies for Cloud Deployment
-# ============================================
+# ============================================================
+# MAXI AI ROBOT v2 — cloud (Railway) dependencies
+# Stack: Flask + Socket.IO gateway · Groq LLM · Edge-TTS ·
+#        browser STT (on the tablet) · Raspberry Pi hands over HTTP.
+# ============================================================
 
-# ============================================
-# WEB FRAMEWORK & SERVER
-# ============================================
+# --- Web framework & realtime gateway ---
 Flask==2.3.2
 Flask-SocketIO==5.3.4
 python-socketio==5.8.0
 python-engineio==4.12.2
+simple-websocket==1.1.0
 Werkzeug==3.1.3
 gunicorn==21.2.0
-
-# ============================================
-# AI & MACHINE LEARNING - CORE
-# ============================================
-# Groq (Cloud LLM & Speech-to-Text)
-groq==0.25.0
-
-# Sentence Transformers (for context embeddings)
-sentence-transformers==4.1.0
-transformers==4.50.3
-torch==2.7.0
-tokenizers==0.21.1
-tiktoken==0.9.0
-
-# ============================================
-# HTTP & API CLIENTS
-# ============================================
-requests==2.32.3
-httpx==0.28.1
-aiohttp==3.11.18
-urllib3==2.4.0
-
-# ============================================
-# ENVIRONMENT & CONFIGURATION
-# ============================================
-python-dotenv==1.1.0
-
-# ============================================
-# DATA PROCESSING
-# ============================================
-numpy==1.26.4
-pandas==2.2.3
-
-# ============================================
-# TEXT PROCESSING & NLP UTILITIES
-# ============================================
-word2number==1.1
-
-# ============================================
-# AUDIO (Cloud-based, minimal)
-# ============================================
-# Edge TTS for cloud text-to-speech
-edge-tts==7.2.7
-pydub==0.25.1
-
-# ============================================
-# SAFETY & UTILITIES
-# ============================================
-# Content safety and logging
-certifi==2025.1.31
-charset-normalizer==3.4.1
-idna==3.10
-
-# Date/time utilities
-python-dateutil==2.9.0.post0
-pytz==2025.2
-
-# ============================================
-# TYPING & VALIDATION
-# ============================================
-typing_extensions==4.13.2
-pydantic==2.10.6
-pydantic_core==2.27.2
-
-# ============================================
-# ASYNC SUPPORT
-# ============================================
-asyncio==3.4.3
-aiofiles==23.2.1
-
-# ============================================
-# TEMPLATE ENGINE
-# ============================================
 Jinja2==3.1.6
 MarkupSafe==2.1.5
 
-# ============================================
-# JSON & SERIALIZATION
-# ============================================
-orjson==3.10.18
+# --- LLM (Groq, free tier) ---
+groq==0.25.0
 
-# ============================================
-# WEBSOCKETS
-# ============================================
-websockets==14.2
-simple-websocket==1.1.0
+# --- Text-to-speech (Microsoft Edge-TTS, free) ---
+edge-tts==7.2.7
 
-# ============================================
-# LOGGING & MONITORING
-# ============================================
+# --- HTTP clients (Pi hands, weather) ---
+aiohttp==3.11.18
+requests==2.32.3
+certifi==2025.1.31
+charset-normalizer==3.4.1
+idna==3.10
+urllib3==2.4.0
+
+# --- Config & utilities ---
+python-dotenv==1.1.0
+typing_extensions==4.13.2
 colorama==0.4.6
+python-dateutil==2.9.0.post0
+pytz==2025.2
 
-# ============================================
-# HUGGING FACE HUB
-# ============================================
-huggingface-hub==0.27.1
-safetensors==0.5.3
-
-# ============================================
-# FILE UTILITIES
-# ============================================
-filelock==3.18.0
-fsspec==2025.3.0
-
-# ============================================
-# REGEX & TEXT PROCESSING
-# ============================================
-regex==2024.11.6
-
-# ============================================
-# MULTI-PART FORMS
-# ============================================
-python-multipart==0.0.20
-
-# ============================================
-# YAML CONFIGURATION
-# ============================================
-PyYAML==6.0.2
-
-# ============================================
-# PROGRESS BARS
-# ============================================
-tqdm==4.67.1
-
-# ============================================
-# DEPENDENCIES CLEANUP
-# ============================================
-# Note: The following are NOT included for Railway:
-# - pygame (local audio only)
-# - PyAudio (local microphone only)
-# - vosk (local STT only)
-# - whisper (local STT only)
-# - openwakeword (local wake word only)
-# - pvporcupine (local wake word only)
-# - sounddevice (local audio only)
-# - soundfile (local audio only)
-# - SpeechRecognition (local STT only)
-# - librosa (audio analysis, not needed)
-# - gradio (UI framework, not needed)
-# - wandb (experiment tracking, not needed)
-# - All Zope packages (web framework, not needed)
-# - All grok packages (web framework, not needed)
-#
-# Railway uses:
-# - Groq API for LLM (cloud)
-# - Groq Whisper API for STT (cloud)
-# - Edge TTS for speech (cloud)
-# - No local audio hardware
-# - No wake word detection (UI buttons only)
-
-# ============================================
-# OPTIONAL: UNCOMMENT IF NEEDED
-# ============================================
-
-# Database ORM (if using PostgreSQL instead of SQLite)
-# psycopg2-binary==2.9.9
-
-# Redis for caching (if scaling)
-# redis==5.0.1
-
-# Sentry for error tracking
-# sentry-sdk==2.27.0
-
-# Better WSGI server for production
-# waitress==3.0.1
+# ============================================================
+# OPTIONAL — advanced embedding-based memory
+# brain/context_manager/ is NOT wired by default (the running system uses a
+# fast in-process window memory). Removing the heavy ML stack keeps the cloud
+# image small and boot fast. To enable semantic long-term memory, install:
+#   sentence-transformers==4.1.0
+#   transformers==4.50.3
+#   torch==2.7.0
+#   tiktoken==0.9.0
+#   numpy==1.26.4
+# then swap maxi.services.memory.WindowMemory for the context-manager backend.
+# ============================================================
