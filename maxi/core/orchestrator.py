@@ -50,6 +50,9 @@ class Orchestrator:
         self.session = Session()
         self.memory: Memory = memory or WindowMemory()
         self._running = False
+        # Reverts to IDLE if a wake happens but no question is heard in time.
+        self._listen_timeout_task: Optional[asyncio.Task] = None
+        self.listen_timeout_seconds = 15.0
 
     # -- lifecycle -----------------------------------------------------------
     async def run(self) -> None:
@@ -107,15 +110,22 @@ class Orchestrator:
         await self.session.cancel_speaking()
         self.session.enter(Phase.LISTENING)
         await self.transport.emit(events.state_change(Phase.LISTENING))
+        self._start_listen_timeout()
         logger.info("Wake → LISTENING (mode=%s)", self.session.mode.value)
 
     async def _on_transcription(self, msg: Dict[str, Any]) -> None:
         text = (msg.get("text") or "").strip()
         if not text:
             return
-        # A transcription always starts (or restarts) an interaction. If Maxi was
-        # mid-sentence, this is a follow-up after a barge-in — cancel and re-answer.
-        await self.session.cancel_speaking()
+        # Only accept a question when we are actually LISTENING (i.e. right after a
+        # wake word or mic tap). Ignore stray/echo transcriptions during
+        # THINKING / SPEAKING / IDLE — THIS is what stops Maxi from hearing its own
+        # voice and answering itself in a loop.
+        if self.session.phase != Phase.LISTENING:
+            logger.info("Ignoring transcription in phase=%s: %r",
+                        self.session.phase.value, text[:50])
+            return
+        self._cancel_listen_timeout()
         if self.session.mode == Mode.IDLE:
             self.session.set_mode(Mode.GENERAL_CHAT)
         await self.transport.emit(events.transcription(text))
@@ -149,9 +159,11 @@ class Orchestrator:
         try:
             await skill.handle(ctx)
             await self.transport.emit(events.response_complete())
-            # Conversation stays live: after speaking, keep listening for a follow-up.
-            self.session.enter(Phase.LISTENING)
-            await self.transport.emit(events.state_change(Phase.LISTENING))
+            # Answer done → go back to WAITING (wake-gated). The child says
+            # "Hey Maxi" or taps the mic to ask the next question. This is what
+            # prevents the always-on listen→speak→listen runaway loop.
+            self.session.enter(Phase.IDLE)
+            await self.transport.emit(events.state_change(Phase.IDLE))
         except asyncio.CancelledError:
             logger.info("Speaking cancelled (barge-in).")
             raise
@@ -161,33 +173,58 @@ class Orchestrator:
                 await ctx.speaker.say("Oops, my brain hiccuped. Let's try that again!")
             except Exception:  # noqa: BLE001
                 pass
-            self.session.enter(Phase.LISTENING)
-            await self.transport.emit(events.state_change(Phase.LISTENING))
+            self.session.enter(Phase.IDLE)
+            await self.transport.emit(events.state_change(Phase.IDLE))
         finally:
             self.session.current_script = ""
             if self.session.speaking_task is me:
                 self.session.speaking_task = None
 
     async def _on_interrupt(self) -> None:
+        # A real barge-in: the child interrupted to say something new, so stop
+        # talking and listen for their next words (with a timeout back to idle).
         if self.session.is_speaking():
             logger.info("Barge-in accepted → stopping speech.")
             await self.transport.emit(events.state_change(Phase.INTERRUPTED))
             await self.session.cancel_speaking()
         self.session.enter(Phase.LISTENING)
         await self.transport.emit(events.state_change(Phase.LISTENING))
+        self._start_listen_timeout()
 
     async def _on_set_mode(self, mode_wire: Optional[str]) -> None:
+        # Selecting a mode does NOT start listening — Maxi waits for a wake word
+        # (or mic tap). This is why it no longer listens the moment you connect.
         mode = Mode.from_wire(mode_wire)
         await self.session.cancel_speaking()
+        self._cancel_listen_timeout()
         self.session.set_mode(mode)
-        if mode == Mode.IDLE:
-            await self.transport.emit(events.state_change(Phase.IDLE))
-        else:
-            self.session.enter(Phase.LISTENING)
-            await self.transport.emit(events.state_change(Phase.LISTENING))
-        logger.info("Mode → %s", mode.value)
+        self.session.enter(Phase.IDLE)
+        await self.transport.emit(events.state_change(Phase.IDLE))
+        logger.info("Mode → %s (idle, awaiting wake)", mode.value)
 
     async def _to_idle(self) -> None:
         await self.session.cancel_speaking()
+        self._cancel_listen_timeout()
         self.session.set_mode(Mode.IDLE)
         await self.transport.emit(events.state_change(Phase.IDLE))
+
+    # -- listen timeout ------------------------------------------------------
+    def _start_listen_timeout(self) -> None:
+        self._cancel_listen_timeout()
+        self._listen_timeout_task = asyncio.create_task(self._listen_timeout())
+
+    def _cancel_listen_timeout(self) -> None:
+        task = self._listen_timeout_task
+        self._listen_timeout_task = None
+        if task and not task.done():
+            task.cancel()
+
+    async def _listen_timeout(self) -> None:
+        try:
+            await asyncio.sleep(self.listen_timeout_seconds)
+        except asyncio.CancelledError:
+            return
+        if self.session.phase == Phase.LISTENING:
+            self.session.enter(Phase.IDLE)
+            await self.transport.emit(events.state_change(Phase.IDLE))
+            logger.info("Listen timeout → IDLE (no question heard)")

@@ -74,7 +74,9 @@ async def main() -> int:
     runner = asyncio.create_task(orch.run())
     await asyncio.sleep(0.05)
 
-    # Child asks a question → Maxi starts a long answer.
+    # Wake first (wake-gated), THEN ask — Maxi starts a long answer.
+    await transport.inbound.put({"type": Incoming.WAKE.value})
+    await asyncio.sleep(0.05)
     await transport.inbound.put({"type": Incoming.TRANSCRIPTION.value, "text": "tell me a long story"})
     await asyncio.sleep(1.2)  # let a few sentences play
 

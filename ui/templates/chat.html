@@ -1230,10 +1230,11 @@
           console.log("Connecting to Socket.IO server...");
 
           try {
-            // Socket.IO automatically handles wss:// on HTTPS
+            // Polling transport — the Flask dev server on Railway can't do raw
+            // WebSockets (causes 500s + reconnect churn). Polling is stable here.
             this.socket = io({
-              transports: ["websocket", "polling"],
-              upgrade: true,
+              transports: ["polling"],
+              upgrade: false,
             });
 
             this.socket.on("connect", () => {
@@ -1393,9 +1394,11 @@
               break;
 
             case "idle":
-              this.updateStatus("Say 'Hey Maxi' to start...");
+              this.updateStatus("Say 'Hey Maxi' or tap the mic to start...");
               this.updateMicButton("idle");
-              this.voiceEngine.setMode("WAKE");
+              // If tail audio is still playing, stay echo-safe until it ends;
+              // onAudioComplete then drops us to WAKE.
+              this.voiceEngine.setMode(this.audioPlayer.isPlaying ? "BARGE_IN" : "WAKE");
               break;
 
             case "wake":

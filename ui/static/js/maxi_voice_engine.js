@@ -220,7 +220,14 @@
         }
       } else if (this.mode === "CAPTURE") {
         if (finalConf && finalConf < MIN_CONFIDENCE) return;
-        if (norm) this.onUtterance(norm, finalConf || 1);
+        if (!norm) return;
+        // Safety: if we somehow capture Maxi's own recent words (tail audio /
+        // echo right after it finished), don't treat it as the child's question.
+        if (this._isEcho(norm)) {
+          this._decide("ignored capture: self-echo");
+          return;
+        }
+        this.onUtterance(norm, finalConf || 1);
       }
     }
 
@@ -298,6 +305,16 @@
     _triggerInScript(word) {
       // Every token of the trigger appears in Maxi's recent script → it's echo.
       return word.split(" ").every((tok) => this._scriptWords.has(tok));
+    }
+
+    _isEcho(phrase) {
+      // Treat a phrase as Maxi's own echo when we have a recent script and most
+      // of the phrase's words belong to it.
+      if (!this._scriptWords || this._scriptWords.size === 0) return false;
+      const words = phrase.split(" ").filter(Boolean);
+      if (words.length === 0) return false;
+      const inScript = words.filter((w) => this._scriptWords.has(w)).length;
+      return inScript / words.length >= 0.8;
     }
   }
 

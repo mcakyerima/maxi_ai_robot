@@ -1131,9 +1131,11 @@
                 console.log('Connecting to Socket.IO...');
                 
                 try {
+                    // Polling transport — the Flask dev server on Railway can't do
+                    // raw WebSockets (500s + reconnect churn). Polling is stable.
                     this.socket = io({
-                        transports: ['websocket', 'polling'],
-                        upgrade: true
+                        transports: ['polling'],
+                        upgrade: false
                     });
                     
                     this.socket.on('connect', () => {
@@ -1373,7 +1375,8 @@
                     case 'idle':
                         this.clearFingers();
                         this.resetUIState();
-                        this.voiceEngine.setMode('WAKE');
+                        // Stay echo-safe while tail audio plays; onAudioComplete → WAKE.
+                        this.voiceEngine.setMode(this.audioPlayer.isPlaying ? 'BARGE_IN' : 'WAKE');
                         break;
                 }
             }
