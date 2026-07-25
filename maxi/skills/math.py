@@ -249,14 +249,20 @@ class MathSkill(Skill):
         return ""
 
     _JSON_SYSTEM = (
-        "You are Maxi, a fun, patient math teacher for children aged 6-12. Solve the "
-        "math problem or word problem below. Reply with ONLY a JSON object (no extra "
-        "text) in EXACTLY this shape:\n"
-        '{"original_question": string, "answer": number or string, '
-        '"intro": one short kid-friendly sentence, '
-        '"steps": [{"step": integer starting at 1, "operation": short string like '
-        '"3 + 2", "result": number, "description": one short simple sentence '
-        'explaining this step}], "breakdown": one short sentence tying it together}\n'
+        "You are Maxi, a warm, patient math teacher for children aged 6-12. Solve the "
+        "math problem or WORD PROBLEM below. Explain it like you are gently talking a "
+        "child through a story: use the SAME real things and actions from the problem "
+        "(for example mangoes, a friend, eating, giving) — never say the abstract word "
+        "'numbers'. Reply with ONLY a JSON object (no extra text) in EXACTLY this shape:\n"
+        '{"original_question": string, '
+        '"answer": number or string, '
+        '"intro": one short friendly sentence that sets up the story, '
+        '"steps": [{"step": integer from 1, "operation": short math like "10 - 2", '
+        '"result": number, "description": ONE short sentence in the story\'s own words, '
+        'e.g. "You start with 10 mangoes, then you eat 2, so now you have 8 left."}], '
+        '"final_answer": one warm sentence that restates the answer with the real things, '
+        'e.g. "So you have 7 mangoes left!", '
+        '"breakdown": one short encouraging sentence}\n'
         "Use 2 to 4 steps. Simple words a young child understands. No emojis."
     )
 
@@ -295,12 +301,14 @@ class MathSkill(Skill):
         steps = data.get("steps") or []
         breakdown = str(data.get("breakdown") or "")
         intro = str(data.get("intro") or "Let's solve this step by step!")
+        final_answer = str(data.get("final_answer") or "")
 
         if steps:
-            await self._walk_steps(ctx, original, answer, steps, breakdown, intro=intro)
+            await self._walk_steps(ctx, original, answer, steps, breakdown,
+                                   intro=intro, final_answer=final_answer)
         else:
             await ctx.speaker.say(intro)
-            await ctx.speaker.say(f"The answer is {answer}!")
+            await ctx.speaker.say(final_answer or f"The answer is {answer}!")
             if breakdown:
                 await ctx.speaker.say(breakdown)
             await ctx.memory.add_user(text)
@@ -309,6 +317,7 @@ class MathSkill(Skill):
     async def _walk_steps(
         self, ctx: SkillContext, original: str, result: Any,
         steps: List[Dict[str, Any]], breakdown: str, intro: str = "",
+        final_answer: str = "",
     ) -> None:
         """Render the steps in the UI, then speak each one while highlighting it."""
         result_str = _num_str(result)
@@ -326,8 +335,8 @@ class MathSkill(Skill):
             desc = str(step.get("description") or f"{step.get('operation', '')} equals {step.get('result', '')}.")
             await ctx.speaker.say(desc)
             await asyncio.sleep(max(0.6, len(desc.split()) / 2.7 + 0.3))
-        # 4) Final answer + wrap-up.
-        await ctx.speaker.say(f"So the answer is {result_str}!")
+        # 4) Final answer + wrap-up — restate it in the story's own words when we have it.
+        await ctx.speaker.say(final_answer or f"So the answer is {result_str}!")
         if breakdown:
             await ctx.speaker.say(breakdown)
         await ctx.memory.add_user(ctx.text)
