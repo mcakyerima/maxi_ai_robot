@@ -40,7 +40,13 @@ def _get_int(name: str, default: int) -> int:
 
 
 def _get_bool(name: str, default: bool) -> bool:
-    return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
+    # An empty/whitespace value (e.g. a Railway variable added but left blank) is
+    # treated as UNSET → falls back to the default, so it can't silently flip a
+    # feature off. Only an explicit falsy value disables.
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 @dataclass(frozen=True)
