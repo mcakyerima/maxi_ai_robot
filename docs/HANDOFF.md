@@ -50,6 +50,11 @@ Set these in Railway → service → Variables:
 - `RASPBERRY_PI_URL=https://<pi-tunnel>` (+ `MAXI_HAND_API_KEY`) — only if you want the
   physical hands from the cloud (Railway can't reach a LAN IP). Else hands run in sim.
 - `PORT` is set by Railway automatically.
+- **Long-term memory (optional, sensible defaults):** `MAXI_MEMORY_ENABLED` (default on),
+  `MAXI_MEMORY_DB` (default `<repo>/data/maxi_memory.db`), `MAXI_CHILD_ID` (default
+  `default`), `MAXI_MEMORY_SUMMARIZE_EVERY` (default 6). ⚠️ **Railway's default
+  filesystem is EPHEMERAL** — the memory DB resets on every redeploy. For memory that
+  survives deploys, attach a Railway **Volume** and set `MAXI_MEMORY_DB` to a path on it.
 
 ---
 
@@ -68,7 +73,9 @@ core/
 services/
   llm.py         Groq streaming; NEVER throws (falls back to friendly msg); complete(json_mode)
   tts.py         Edge-TTS, one sentence at a time, retry + voice fallback
-  memory.py      WindowMemory (fast, in-process). Advanced embedding memory NOT wired.
+  memory.py      WindowMemory (ephemeral) + PersistentMemory (long-term: SQLite
+                 facts/topics + rolling summary; no heavy deps). Factory uses the
+                 latter. Embedding context_manager still NOT wired (kept off Railway).
   safety.py      wraps brain.safety (content filter, rate limiter, usage tracker)
 skills/
   base.py        Skill + SkillContext + SkillRouter (register a skill → it's live)
@@ -161,6 +168,33 @@ Key behaviors (hard-won, don't regress):
 
 ---
 
+## 9b. Just built (this session): long-term memory — "Maxi remembers the child"
+Lightweight, deployable, no heavy deps (stdlib `sqlite3` only — the embedding
+`brain/context_manager` stays OFF the Railway image on purpose).
+- **`maxi/services/memory.py` → `PersistentMemory`** (same `Memory` interface, so BOTH
+  chat and math skills gained memory with zero call-site changes). Keeps the fast
+  sliding window AND a durable per-child SQLite store (`MemoryStore`).
+- **Learns deterministically (no network, fully unit-tested):** name (`my name is…`,
+  `call me…`, gated `i am…` so "i am happy/five" is never a name), likes/dislikes
+  (`i like/love…`, `favorite X is…`, `i don't like/hate…`), and **topics** (content
+  words, stopword-filtered, recency+count ranked).
+- **Rolling summary** = the ONLY LLM-backed piece: fire-and-forget every
+  `SUMMARIZE_EVERY` (6) assistant turns, 10s timeout, degrades to a no-op when Groq is off.
+- **Recall** is injected as ONE extra `system` message ("child you've met before: name…,
+  likes…, recently asked about…, what you remember…"). **A brand-new child gets NO block**,
+  so behavior is byte-identical to the old `WindowMemory` until Maxi has actually learned
+  something — no regression risk to chat/math.
+- **Persistence is across sessions**, not just in-process: a fresh `Session` (new
+  `session_id` each connect) reads the same DB, so Maxi greets a returning child by name.
+- Config: `MemorySettings` in `config.py` (`MAXI_MEMORY_*` env, see §3). DB is `.gitignore`d.
+- **Verified:** `venv/Scripts/python.exe tests/test_memory.py` → 24/24 (extraction,
+  cross-session persistence, recall injection, summary via a fake LLM, robustness). Existing
+  barge-in + playback tests still pass; factory boots with `PersistentMemory`.
+- **Try it on device:** tell Maxi "my name is Amina and I love football", ask a couple
+  things, reconnect/restart, then just say "hi" — the answer should use the name/interests.
+
+---
+
 ## 10. Roadmap (priority order) — pick up here
 **Tier 1 — finish/validate**
 1. ✅ Step-by-step math (just done — verify on device).
@@ -175,8 +209,10 @@ Key behaviors (hard-won, don't regress):
 6. Groq model fallback / quota-aware messaging (partly done).
 
 **Tier 3 — advanced tutor**
-7. **Long-term memory:** wire `brain/context_manager` (SQLite + embeddings) behind the
-   `Memory` interface so Maxi remembers the child (name, interests, progress). Big win.
+7. ✅ **Long-term memory (lightweight):** DONE this session — `PersistentMemory`
+   (SQLite facts/topics + rolling summary, no heavy deps). See §9b. Future option:
+   upgrade to embedding recall via `brain/context_manager` IF semantic search is ever
+   needed (adds torch/sentence-transformers — deliberately avoided for now).
 8. More skills: storytelling, spelling, science Q&A, quizzes, songs, games.
 9. Personality/expression: richer robot-face emotions synced to content.
 10. Local language (Hausa/Kanuri/pidgin).
@@ -189,6 +225,7 @@ Key behaviors (hard-won, don't regress):
 ---
 
 ## 11. Recent commit trail (newest first)
+- (this session) long-term memory: PersistentMemory (SQLite facts/topics + rolling summary)
 - `230a415` fix word problems misrouted to local solver ("and"→"+"; now LLM path, answer correct)
 - `b7d923a` build marker + math diagnostic logs
 - `4250886` kid-friendly, story-contextual word-problem explanations (+ final_answer)

@@ -110,6 +110,25 @@ class IntegrationsSettings:
 
 
 @dataclass(frozen=True)
+class MemorySettings:
+    """Lightweight long-term memory: a SQLite store of the child's facts + a
+    rolling conversation summary. Zero heavy deps (stdlib ``sqlite3`` only) — the
+    embedding-based ``brain/context_manager`` is deliberately NOT used so the
+    Railway image stays lean."""
+    enabled: bool = field(default_factory=lambda: _get_bool("MAXI_MEMORY_ENABLED", True))
+    # Empty → defaults to <repo>/data/maxi_memory.db (see memory.py). Point this at
+    # a Railway volume for durability across redeploys; the default FS is ephemeral.
+    db_path: str = field(default_factory=lambda: _get("MAXI_MEMORY_DB", ""))
+    # One robot ≈ one child household by default. Bump to support multiple profiles.
+    child_id: str = field(default_factory=lambda: _get("MAXI_CHILD_ID", "default"))
+    window_turns: int = field(default_factory=lambda: _get_int("MAXI_MEMORY_WINDOW_TURNS", 12))
+    # Regenerate the rolling summary every N assistant turns (needs the LLM).
+    summarize_every: int = field(default_factory=lambda: _get_int("MAXI_MEMORY_SUMMARIZE_EVERY", 6))
+    max_facts_recall: int = field(default_factory=lambda: _get_int("MAXI_MEMORY_MAX_FACTS", 8))
+    max_topics_recall: int = field(default_factory=lambda: _get_int("MAXI_MEMORY_MAX_TOPICS", 5))
+
+
+@dataclass(frozen=True)
 class Settings:
     """Top-level settings aggregate. Access via the module-level ``settings``."""
     llm: LLMSettings = field(default_factory=LLMSettings)
@@ -118,6 +137,7 @@ class Settings:
     server: ServerSettings = field(default_factory=ServerSettings)
     safety: SafetySettings = field(default_factory=SafetySettings)
     integrations: IntegrationsSettings = field(default_factory=IntegrationsSettings)
+    memory: MemorySettings = field(default_factory=MemorySettings)
 
     # Persona / location context used by the tutoring system prompt.
     persona_name: str = field(default_factory=lambda: _get("MAXI_NAME", "Maxi"))
