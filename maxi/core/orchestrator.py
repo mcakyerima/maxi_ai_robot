@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import traceback
 from typing import Any, Dict, Optional
 
+from maxi import persona
 from maxi.core import events
 from maxi.core.events import Incoming, Mode, Phase
 from maxi.core.session import Session
@@ -183,12 +185,18 @@ class Orchestrator:
                 self.session.speaking_task = None
 
     async def _on_interrupt(self) -> None:
-        # A real barge-in: the child interrupted to say something new, so stop
-        # talking and listen for their next words (with a timeout back to idle).
+        # A real barge-in: the child interrupted to say something new. Stop
+        # talking, give a quick natural acknowledgement (not a cold cut-off),
+        # then listen for their next words (with a timeout back to idle).
         if self.session.is_speaking():
             logger.info("Barge-in accepted → stopping speech.")
             await self.transport.emit(events.state_change(Phase.INTERRUPTED))
             await self.session.cancel_speaking()
+            try:
+                ack = random.choice(persona.INTERRUPT_ACKS)
+                await Speaker(self.tts, self.transport, self.session).say(ack)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("interrupt ack failed: %s", exc)
         self.session.enter(Phase.LISTENING)
         await self.transport.emit(events.state_change(Phase.LISTENING))
         self._start_listen_timeout()

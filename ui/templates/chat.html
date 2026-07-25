@@ -1441,6 +1441,7 @@
               break;
 
             case "idle":
+              this.updateVoiceStatus("Tap the mic to talk", false);
               this.updateStatus("Say 'Hey Maxi' or tap the mic to start...");
               this.updateMicButton("idle");
               // If tail audio is still playing, stay echo-safe until it ends;
@@ -1648,8 +1649,10 @@
               typingIndicator.remove();
             }
 
-            // Update with streaming text effect
-            this.streamText(contentDiv, text, 20, true); // faster streaming for real-time
+            // Set the accumulated text directly. (Do NOT re-animate from the
+            // start on every chunk — that caused the text to restart from the
+            // beginning each time a new sentence arrived.)
+            contentDiv.textContent = text;
             this.scrollToBottom();
           }
         }

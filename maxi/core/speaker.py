@@ -44,8 +44,10 @@ class Speaker:
         await self.transport.emit(events.response_chunk(sentence.text))
         if sentence.audio_b64:
             await self.transport.emit(events.audio_chunk(sentence.audio_b64))
-        # Pace to the audio so at most ~one sentence is buffered ahead of playback.
-        await asyncio.sleep(_estimate_seconds(sentence.text))
+        # No artificial pause: send sentences as fast as they synthesize. The
+        # tablet's audio player queues them and plays back-to-back, so speech is
+        # smooth and continuous instead of choppy. Barge-in still works because
+        # the tablet flushes its audio queue the instant it's interrupted.
 
     async def say(self, text: str) -> str:
         """Speak a fixed string. Returns what was said."""

@@ -42,10 +42,16 @@ class FakeLLM:
     async def prewarm(self):
         return True
 
+    enabled = True
+
+    async def complete(self, messages, **kw):
+        return "ok"
+
     async def stream(self, messages, **kw):
-        # A ten-sentence answer, each arriving slowly.
+        # A ten-sentence answer, each arriving slowly (no backend pacing now, so
+        # the per-token delay is what keeps Maxi "speaking" long enough to interrupt).
         for i in range(1, 11):
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.3)
             yield f"This is sentence number {i}. "
 
 
@@ -94,8 +100,9 @@ async def main() -> int:
     assert orch.session.phase == Phase.LISTENING, f"expected LISTENING, got {orch.session.phase}"
     assert Phase.INTERRUPTED.value in transport.states(), "should have emitted 'interrupted'"
     assert 0 < sentences_before < 10, f"should be partway, got {sentences_before}"
-    assert sentences_after <= sentences_before + 1, "no new sentences should play after barge-in"
-    assert orch.session.current_script == "", "current script should be cleared"
+    # After barge-in only the short acknowledgement should play (1 extra script).
+    assert sentences_after <= sentences_before + 1, "the long answer must not keep playing after barge-in"
+    assert "sentence number" not in orch.session.current_script, "long answer must have stopped"
 
     # Follow-up after barge-in works.
     await transport.inbound.put({"type": Incoming.TRANSCRIPTION.value, "text": "what is 2 plus 2"})
