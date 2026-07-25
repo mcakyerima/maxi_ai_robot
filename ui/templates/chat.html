@@ -1019,6 +1019,10 @@
           // Streaming state
           this.currentStreamingMessage = null;
           this.streamingBuffer = "";
+          // When true, ignore incoming audio/text chunks (set on interrupt so the
+          // old answer's in-flight chunks can't keep playing). Cleared when a new
+          // response starts.
+          this._dropIncoming = false;
 
           // The Maxi voice engine now owns the microphone: continuous "Hey Maxi"
           // wake word + self-echo-safe voice barge-in. The old transcriber is
@@ -1123,7 +1127,11 @@
 
         handleVoiceInterrupt() {
           console.log("🛑 Voice barge-in - stopping Maxi");
+          this._dropIncoming = true;
           this.audioPlayer.stop();
+          if (this.currentStreamingMessage) {
+            this.finalizeStreamingMessage(this.streamingBuffer);
+          }
           this.currentStage = "interrupted";
           this.setRobotState("interrupted");
           if (this.socket && this.socket.connected) {
@@ -1154,8 +1162,13 @@
                 "🛑 User interrupted - stopping audio and streaming immediately",
               );
 
-              // STEP 1: Stop audio playback immediately in frontend
+              // STEP 1: Stop audio playback immediately in frontend, and DROP any
+              // further old chunks that are still in flight from the backend.
+              this._dropIncoming = true;
               this.audioPlayer.stop();
+              if (this.currentStreamingMessage) {
+                this.finalizeStreamingMessage(this.streamingBuffer);
+              }
 
               // STEP 2: Stop any ongoing response streaming
               this.isStreamingResponse = false;
@@ -1444,6 +1457,7 @@
               break;
 
             case "idle":
+              this._dropIncoming = false; // safety: don't get stuck dropping
               this.updateVoiceStatus("Tap the mic to talk", false);
               this.updateStatus("Say 'Hey Maxi' or tap the mic to start...");
               this.updateMicButton("idle");
@@ -1559,6 +1573,8 @@
 
         handleStreamingStart(data) {
           console.log("Starting streaming response");
+          // A new response is beginning — stop dropping chunks.
+          this._dropIncoming = false;
           this.addMessage("maxi", "", true, false); // streaming = true, immediate = false
 
           // Initialize streaming buffer with any initial text
@@ -1571,6 +1587,7 @@
         }
 
         handleStreamingChunk(data) {
+          if (this._dropIncoming) return; // ignore the interrupted answer's tail
           console.log("Received chunk:", data.text);
           // Accumulate the text in buffer
           this.streamingBuffer += data.text;
@@ -1590,6 +1607,7 @@
         }
 
         handleAudioChunk(data) {
+          if (this._dropIncoming) return; // ignore the interrupted answer's tail
           console.log("🔊 Received audio chunk");
           try {
             // Play audio using the audio player

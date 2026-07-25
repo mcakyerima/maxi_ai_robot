@@ -908,6 +908,7 @@
                 this.isConnected = false;
                 this.currentStage = 'idle';
                 this.currentProblem = null;
+                this._dropIncoming = false; // drop old chunks after an interrupt
                 this.GRACE_PERIOD_MS = 1500; // Matches server's 1.5s grace period
                 
                 // DOM Elements
@@ -1009,6 +1010,7 @@
 
             handleVoiceInterrupt() {
                 console.log('🛑 Voice barge-in - stopping Maxi (math)');
+                this._dropIncoming = true;
                 this.audioPlayer.stop();
                 this.currentStage = 'interrupted';
                 if (this.socket && this.socket.connected) {
@@ -1028,7 +1030,11 @@
                     // (check the audio player, not just the state which can lag).
                     if (this.currentStage === 'speaking' || (this.audioPlayer && this.audioPlayer.isPlaying)) {
                         console.log('🛑 User interrupted speaking in math mode');
-                        
+
+                        // Stop playback immediately and drop the old answer's tail.
+                        this._dropIncoming = true;
+                        this.audioPlayer.stop();
+
                         // Random friendly interruption messages for math mode
                         const interruptMessages = [
                             "Oops! You want to try another problem? Let's go!",
@@ -1278,6 +1284,11 @@
                     case 'audio_chunk':
                         this.handleAudioChunk(data);
                         break;
+                    case 'response_start':
+                        // A new response segment (e.g. the interrupt ack) — resume
+                        // accepting audio chunks.
+                        this._dropIncoming = false;
+                        break;
                     case 'speaking_script':
                         // Let the voice engine know Maxi's live words for echo rejection.
                         if (this.voiceEngine && data.text) this.voiceEngine.setScript(data.text);
@@ -1292,6 +1303,7 @@
             }
 
             handleAudioChunk(data) {
+                if (this._dropIncoming) return; // ignore interrupted answer's tail
                 console.log('🔊 Received audio chunk');
                 try {
                     // Play audio using the audio player
@@ -1378,6 +1390,7 @@
                         break;
                         
                     case 'idle':
+                        this._dropIncoming = false; // safety: don't get stuck dropping
                         this.clearFingers();
                         this.resetUIState();
                         // Stay echo-safe while tail audio plays; onAudioComplete → WAKE.

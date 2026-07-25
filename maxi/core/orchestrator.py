@@ -97,9 +97,13 @@ class Orchestrator:
             await self._to_idle()
         elif mtype == Incoming.AUDIO_STARTED.value:
             self.session.mark_audio_sent()
-        elif mtype in (Incoming.AUDIO_COMPLETE.value, Incoming.AUDIO_INTERRUPTED.value):
-            # The tablet finished (or flushed) its audio queue — playback is done.
+        elif mtype == Incoming.AUDIO_COMPLETE.value:
+            # Natural end of playback → the turn may finish.
             self.session.mark_audio_done()
+        elif mtype == Incoming.AUDIO_INTERRUPTED.value:
+            # User stopped it — do NOT end the turn here; the 'interrupted' event
+            # cancels the speaking task and drives the ack + listen transition.
+            self.session.audio_playing = False
         else:
             logger.debug("unhandled message type: %s", mtype)
 
@@ -192,16 +196,22 @@ class Orchestrator:
                 self.session.speaking_task = None
 
     async def _on_interrupt(self) -> None:
-        # A real barge-in: the child interrupted to say something new. Stop
-        # talking, give a quick natural acknowledgement (not a cold cut-off),
-        # then listen for their next words (with a timeout back to idle).
-        if self.session.is_speaking():
+        # A real barge-in: the child interrupted to say something new.
+        was_speaking = self.session.is_speaking() or self.session.phase == Phase.SPEAKING
+        # 1) Stop producing/sending the old answer FIRST (so no stray chunks slip
+        #    out after we tell the tablet to resume).
+        await self.session.cancel_speaking()
+        self.session.mark_audio_done()
+        if was_speaking:
             logger.info("Barge-in accepted → stopping speech.")
             await self.transport.emit(events.state_change(Phase.INTERRUPTED))
-            await self.session.cancel_speaking()
+            # 2) response_start tells the tablet a NEW segment begins — it stops
+            #    dropping incoming chunks and opens a fresh bubble for the ack.
+            await self.transport.emit(events.response_start())
             try:
                 ack = random.choice(persona.INTERRUPT_ACKS)
                 await Speaker(self.tts, self.transport, self.session).say(ack)
+                await self.transport.emit(events.response_complete())
             except Exception as exc:  # noqa: BLE001
                 logger.warning("interrupt ack failed: %s", exc)
         self.session.enter(Phase.LISTENING)
