@@ -178,17 +178,23 @@ class MathSkill(Skill):
             return
         self.safety.log_question(ctx.session_id, text, "math", "mathematics")
 
+        # --- BUILD MARKER: proves the NEW math skill is running on Railway ---
+        logger.info("🧮🧮 MATH-V2-STEPBYSTEP received question=%r", text)
+
         solved = _quick_solve(text)
         if solved is not None:
+            logger.info("🧮 path=QUICK_SOLVE  %s %s %s = %s", solved.a, solved.op, solved.b, solved.result)
             await self._narrate(ctx, solved)
             return
         multi = _multi_solve(text)
         if multi is not None:
+            logger.info("🧮 path=MULTI_SOLVE  steps=%d result=%s", len(multi["steps"]), multi["result"])
             await self._walk_steps(
                 ctx, multi["original"], multi["result"], multi["steps"], multi["breakdown"],
                 intro="Let's add these up one step at a time!",
             )
             return
+        logger.info("🧮 path=LLM_SOLVE (word problem / complex) — using structured JSON steps")
         await self._llm_solve(ctx, text)
 
     async def _narrate(self, ctx: SkillContext, s: Solved) -> None:
@@ -302,6 +308,8 @@ class MathSkill(Skill):
         breakdown = str(data.get("breakdown") or "")
         intro = str(data.get("intro") or "Let's solve this step by step!")
         final_answer = str(data.get("final_answer") or "")
+        logger.info("🧮 LLM_SOLVE parsed: answer=%s steps=%d intro=%r final_answer=%r",
+                    answer, len(steps), intro[:60], final_answer[:80])
 
         if steps:
             await self._walk_steps(ctx, original, answer, steps, breakdown,

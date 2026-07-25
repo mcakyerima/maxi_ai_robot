@@ -156,6 +156,7 @@ def on_message(data: Dict[str, Any]):
 
 
 def main() -> None:
+    logger.info("🚀🚀 MAXI BUILD MARKER: math-v2-stepbystep + kid-friendly word problems 🚀🚀")
     start_brain_thread()
     logger.info("Maxi v2 serving on http://%s:%s", settings.server.host, settings.server.port)
 
