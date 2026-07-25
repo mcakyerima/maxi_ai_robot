@@ -1142,10 +1142,13 @@
               return;
             }
 
-            // Handle interruption during speaking or streaming
+            // Handle interruption whenever Maxi is actually talking — check the
+            // audio player directly, not just the state (the state can lag behind
+            // real playback). This is what makes barge-in reliable to the last word.
             if (
               this.currentStage === "speaking" ||
-              this.currentStage === "streaming"
+              this.currentStage === "streaming" ||
+              (this.audioPlayer && this.audioPlayer.isPlaying)
             ) {
               console.log(
                 "🛑 User interrupted - stopping audio and streaming immediately",

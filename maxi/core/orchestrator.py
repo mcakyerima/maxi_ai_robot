@@ -95,11 +95,11 @@ class Orchestrator:
             await self._on_set_mode(msg.get("mode"))
         elif mtype == Incoming.BACK_TO_MENU.value:
             await self._to_idle()
-        elif mtype in (
-            Incoming.AUDIO_STARTED.value, Incoming.AUDIO_COMPLETE.value,
-            Incoming.AUDIO_INTERRUPTED.value,
-        ):
-            logger.debug("tablet audio state: %s", mtype)
+        elif mtype == Incoming.AUDIO_STARTED.value:
+            self.session.mark_audio_sent()
+        elif mtype in (Incoming.AUDIO_COMPLETE.value, Incoming.AUDIO_INTERRUPTED.value):
+            # The tablet finished (or flushed) its audio queue — playback is done.
+            self.session.mark_audio_done()
         else:
             logger.debug("unhandled message type: %s", mtype)
 
@@ -139,6 +139,9 @@ class Orchestrator:
             await self.transport.emit(events.error("No skill available for this mode."))
             return
 
+        # Fresh playback state for this turn (ignore any stale audio_complete).
+        self.session.mark_audio_done()
+
         self.session.enter(Phase.THINKING)
         await self.transport.emit(events.state_change(Phase.THINKING))
 
@@ -163,6 +166,10 @@ class Orchestrator:
             await self.transport.emit(events.response_start())
             await skill.handle(ctx)
             await self.transport.emit(events.response_complete())
+            # Stay in SPEAKING until the tablet has actually FINISHED playing the
+            # audio (not just until we finished sending it). Only then go idle —
+            # so the state is truthful and barge-in works right up to the last word.
+            await self._await_playback_done()
             # Answer done → go back to WAITING (wake-gated). The child says
             # "Hey Maxi" or taps the mic to ask the next question. This is what
             # prevents the always-on listen→speak→listen runaway loop.
@@ -217,6 +224,15 @@ class Orchestrator:
         self._cancel_listen_timeout()
         self.session.set_mode(Mode.IDLE)
         await self.transport.emit(events.state_change(Phase.IDLE))
+
+    async def _await_playback_done(self, timeout: float = 45.0) -> None:
+        """Block until the tablet reports the audio finished playing (or a safety timeout)."""
+        if self.session.playback_done.is_set():
+            return
+        try:
+            await asyncio.wait_for(self.session.playback_done.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("playback_done timed out after %ss; leaving SPEAKING anyway", timeout)
 
     # -- listen timeout ------------------------------------------------------
     def _start_listen_timeout(self) -> None:

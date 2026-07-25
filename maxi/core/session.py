@@ -29,8 +29,25 @@ class Session:
     # Guards against overlapping interactions (double wake, echo re-trigger).
     interaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
+    # Real playback state, driven by the tablet's audio_started/audio_complete.
+    # ``playback_done`` is SET when nothing is playing, CLEAR while audio plays —
+    # so the orchestrator only leaves SPEAKING when the tablet finishes the audio.
+    audio_playing: bool = False
+    playback_done: asyncio.Event = field(default_factory=asyncio.Event)
+
+    def __post_init__(self) -> None:
+        self.playback_done.set()  # nothing is playing at start
+
     def is_speaking(self) -> bool:
         return self.speaking_task is not None and not self.speaking_task.done()
+
+    def mark_audio_sent(self) -> None:
+        self.audio_playing = True
+        self.playback_done.clear()
+
+    def mark_audio_done(self) -> None:
+        self.audio_playing = False
+        self.playback_done.set()
 
     def enter(self, phase: Phase) -> None:
         self.phase = phase

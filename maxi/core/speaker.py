@@ -43,6 +43,9 @@ class Speaker:
         await self.transport.emit(events.speaking_script(sentence.text))
         await self.transport.emit(events.response_chunk(sentence.text))
         if sentence.audio_b64:
+            # Mark playback as pending BEFORE the tablet even reports audio_started,
+            # so there's no race where the backend thinks it's already done.
+            self.session.mark_audio_sent()
             await self.transport.emit(events.audio_chunk(sentence.audio_b64))
         # No artificial pause: send sentences as fast as they synthesize. The
         # tablet's audio player queues them and plays back-to-back, so speech is

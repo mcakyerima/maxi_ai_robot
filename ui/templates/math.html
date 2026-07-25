@@ -1024,8 +1024,9 @@
                         return;
                     }
 
-                    // Handle interruption during speaking
-                    if (this.currentStage === 'speaking') {
+                    // Handle interruption whenever Maxi is actually talking
+                    // (check the audio player, not just the state which can lag).
+                    if (this.currentStage === 'speaking' || (this.audioPlayer && this.audioPlayer.isPlaying)) {
                         console.log('🛑 User interrupted speaking in math mode');
                         
                         // Random friendly interruption messages for math mode
