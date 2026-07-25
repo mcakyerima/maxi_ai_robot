@@ -41,6 +41,35 @@ _OP_SYMBOLS = {"+": "+", "-": "-", "×": "*", "*": "*", "x": "*", "÷": "/", "/"
 _OP_SPOKEN = {"+": "plus", "-": "minus", "*": "times", "/": "divided by"}
 _OP_DISPLAY = {"+": "+", "-": "−", "*": "×", "/": "÷"}  # + − × ÷
 
+# Conversational filler that's fine to ignore when deciding if something is a
+# bare sum vs a word problem.
+_MATH_FILLER = {
+    "what", "whats", "is", "the", "of", "a", "an", "please", "maxi", "hey", "hi",
+    "hello", "tell", "me", "can", "you", "calculate", "work", "out", "to", "does",
+    "do", "so", "um", "how", "much", "many", "up", "result", "answer", "solve",
+    "lets", "again", "equals", "equal",
+}
+# Every word that signals a math operator (built from _OP_WORDS).
+_OP_WORD_TOKENS = {tok for words in _OP_WORDS.values() for w in words for tok in w.split()}
+
+
+def _is_bare_arithmetic(text: str) -> bool:
+    """
+    True only when the utterance is a plain sum ("2 + 2", "five plus three plus two")
+    with no story around it. Word problems ("if I have 10 mangoes and give 2...")
+    contain extra content words and must go to the LLM instead — otherwise "and"
+    gets read as "+" and the local solver gives a wrong answer.
+    """
+    has_number = False
+    for tok in re.findall(r"[a-z']+|\d+", text.lower()):
+        if tok.isdigit() or tok in _WORD_NUMBERS:
+            has_number = True
+            continue
+        if tok in _MATH_FILLER or tok in _OP_WORD_TOKENS:
+            continue
+        return False  # a real content word → it's a word problem
+    return has_number
+
 
 @dataclass
 class Solved:
@@ -181,19 +210,24 @@ class MathSkill(Skill):
         # --- BUILD MARKER: proves the NEW math skill is running on Railway ---
         logger.info("🧮🧮 MATH-V2-STEPBYSTEP received question=%r", text)
 
-        solved = _quick_solve(text)
-        if solved is not None:
-            logger.info("🧮 path=QUICK_SOLVE  %s %s %s = %s", solved.a, solved.op, solved.b, solved.result)
-            await self._narrate(ctx, solved)
-            return
-        multi = _multi_solve(text)
-        if multi is not None:
-            logger.info("🧮 path=MULTI_SOLVE  steps=%d result=%s", len(multi["steps"]), multi["result"])
-            await self._walk_steps(
-                ctx, multi["original"], multi["result"], multi["steps"], multi["breakdown"],
-                intro="Let's add these up one step at a time!",
-            )
-            return
+        # Only use the local (no-LLM) solvers for a PLAIN sum. Anything with story
+        # words ("if I have 10 mangoes and give 2...") goes to the LLM, which
+        # understands give/eat/buy etc. — the local solver would misread "and" as "+".
+        if _is_bare_arithmetic(text):
+            solved = _quick_solve(text)
+            if solved is not None:
+                logger.info("🧮 path=QUICK_SOLVE  %s %s %s = %s", solved.a, solved.op, solved.b, solved.result)
+                await self._narrate(ctx, solved)
+                return
+            multi = _multi_solve(text)
+            if multi is not None:
+                logger.info("🧮 path=MULTI_SOLVE  steps=%d result=%s", len(multi["steps"]), multi["result"])
+                await self._walk_steps(
+                    ctx, multi["original"], multi["result"], multi["steps"], multi["breakdown"],
+                    intro="Let's add these up one step at a time!",
+                )
+                return
+
         logger.info("🧮 path=LLM_SOLVE (word problem / complex) — using structured JSON steps")
         await self._llm_solve(ctx, text)
 
