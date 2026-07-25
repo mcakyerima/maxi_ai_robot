@@ -135,12 +135,20 @@ Key behaviors (hard-won, don't regress):
 
 ---
 
-## 9. Just built (this session's last task): step-by-step math
+## 9. Just built (this session): step-by-step math — WORKING & verified on Railway
 - **Simple arithmetic** (`A op B`): fingers if answer 0–10, UI equation if >10.
 - **Multi-operand** ("5 + 3 + 2"): solved locally into left-to-right steps.
 - **Word problems / complex:** Groq JSON (`intro`, `steps[{operation,result,description}]`,
-  `breakdown`) → renders the step list in the UI (`math_result` advanced) then speaks each
-  step while emitting `highlight_step` so the UI highlights in sync (paced per step).
+  `final_answer`, `breakdown`) → renders the step list in the UI (`math_result` advanced) then
+  speaks each step while emitting `highlight_step` so the UI highlights in sync (paced per step).
+- **Explanations are story-contextual & kid-friendly** (uses the real objects/actions, e.g.
+  "You give 2 mangoes to Fatima… you eat 3… so you have 5 mangoes left!" — not "the answer is 5").
+- **Routing gate `_is_bare_arithmetic`**: local solvers ONLY handle a plain sum; word problems
+  go to the LLM. (Bug fixed: "and" was read as "+", so "10 mangoes and give 2 and eat 3"
+  wrongly computed 15 via the local solver — now it correctly routes to the LLM → 5.)
+- **Word problems REQUIRE Groq working** → `GROQ_MODEL=llama-3.1-8b-instant` must be set on Railway.
+- Diagnostic logs still in: startup "MAXI BUILD MARKER…" + per-question "🧮 MATH-V2… path=…".
+  Handy for verifying deploys; can be stripped when no longer needed.
 - UI machinery already existed in `math.html` (`displayAdvancedMath`, `highlightStep`).
 
 **TEST THIS FIRST in the new session (after `GROQ_MODEL=llama-3.1-8b-instant` on Railway):**
@@ -181,6 +189,10 @@ Key behaviors (hard-won, don't regress):
 ---
 
 ## 11. Recent commit trail (newest first)
+- `230a415` fix word problems misrouted to local solver ("and"→"+"; now LLM path, answer correct)
+- `b7d923a` build marker + math diagnostic logs
+- `4250886` kid-friendly, story-contextual word-problem explanations (+ final_answer)
+- `936f996` this handoff doc
 - `2d08540` step-by-step math (multi-operand + word problems + highlight sync)
 - `523b164` math: preserve spoken operators, drive equation+fingers, align states
 - `958f1e5` barge-in actually stops playback (drop in-flight chunks)
