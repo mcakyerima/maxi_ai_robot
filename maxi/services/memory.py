@@ -184,6 +184,29 @@ def _default_db_path(configured: str) -> str:
     return str(repo_root / "data" / "maxi_memory.db")
 
 
+def describe_config() -> str:
+    """One-line, log-friendly summary of where long-term memory lives and whether
+    it survives a redeploy. Called at startup so a Railway deploy check is
+    unambiguous (see docs/HANDOFF.md §3/§9b)."""
+    cfg = settings.memory
+    if not cfg.enabled:
+        return "long-term memory DISABLED (MAXI_MEMORY_ENABLED=0) → using ephemeral window only"
+    path = os.path.abspath(_default_db_path(cfg.db_path))
+    explicit = bool(cfg.db_path)
+    # Railway exposes the volume's mount path here when a volume is attached.
+    volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "")
+    on_volume = bool(volume) and path.replace("\\", "/").startswith(volume.replace("\\", "/").rstrip("/") + "/")
+    if on_volume:
+        durability = f"PERSISTENT across redeploys (on Railway volume {volume})"
+    elif volume:
+        durability = (f"EPHEMERAL — a volume is mounted at {volume} but the DB is NOT on it; "
+                      f"set MAXI_MEMORY_DB={volume.rstrip('/')}/maxi_memory.db")
+    else:
+        durability = "EPHEMERAL — no Railway volume; DB resets on each redeploy (fine for local/testing)"
+    src = "MAXI_MEMORY_DB" if explicit else "default"
+    return f"long-term memory ON · db={path} ({src}) · child_id={cfg.child_id} · {durability}"
+
+
 class MemoryStore:
     """A thread-safe SQLite wrapper. One row-set per ``child_id``."""
 

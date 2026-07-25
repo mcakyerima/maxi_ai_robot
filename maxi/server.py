@@ -25,6 +25,7 @@ from maxi.config import settings
 from maxi.core.events import Mode
 from maxi.core.transport import Transport
 from maxi.factory import build_orchestrator
+from maxi.services import memory as memory_service
 
 # UTF-8 stdout so emoji logs don't crash on Windows consoles.
 try:
@@ -157,6 +158,7 @@ def on_message(data: Dict[str, Any]):
 
 def main() -> None:
     logger.info("🚀🚀 MAXI BUILD MARKER: math-v2-stepbystep + kid-friendly word problems 🚀🚀")
+    logger.info("🧠 %s", memory_service.describe_config())
     start_brain_thread()
     logger.info("Maxi v2 serving on http://%s:%s", settings.server.host, settings.server.port)
 
