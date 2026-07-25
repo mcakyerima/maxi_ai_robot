@@ -11,6 +11,7 @@ into sentences by the TTS layer, and start playing within ~1 second.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import AsyncIterator, Dict, List, Optional
 
@@ -26,6 +27,7 @@ class LLMService:
         self._client = None  # lazy AsyncGroq
         self.model = settings.llm.model
         self.enabled = settings.llm.enabled
+        self.last_error: Optional[Exception] = None
 
     def _get_client(self):
         if self._client is None:
@@ -68,17 +70,49 @@ class LLMService:
         self, messages: List[Message], *, max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> AsyncIterator[str]:
-        """Yield token deltas as they arrive from Groq."""
-        client = self._get_client()
-        stream = await client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=settings.llm.temperature if temperature is None else temperature,
-            max_tokens=settings.llm.max_tokens if max_tokens is None else max_tokens,
-            top_p=settings.llm.top_p,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
+        """
+        Yield token deltas as they arrive from Groq. This NEVER raises (except on
+        cancellation): on any API error it logs, tries a non-streaming call, and
+        finally yields a friendly kid-safe message — so Maxi always says something
+        instead of "my brain hiccuped".
+        """
+        try:
+            client = self._get_client()
+            stream = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=settings.llm.temperature if temperature is None else temperature,
+                max_tokens=settings.llm.max_tokens if max_tokens is None else max_tokens,
+                top_p=settings.llm.top_p,
+                stream=True,
+            )
+            self.last_error = None
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = exc
+            logger.error("Groq stream failed: %s", exc)
+
+        # Fallback 1: try a single non-streaming completion.
+        try:
+            text = await self.complete(messages, max_tokens=max_tokens, temperature=temperature)
+            if text:
+                yield text
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = exc
+            logger.error("Groq non-streaming fallback failed: %s", exc)
+
+        # Fallback 2: never leave the child in silence.
+        msg = str(self.last_error or "").lower()
+        if "rate limit" in msg or "rate_limit" in msg or "429" in msg:
+            yield "I've done a lot of thinking today and need a little rest. Let's chat again in a bit!"
+        else:
+            yield "Hmm, my thinking got a little tangled. Can you ask me again?"

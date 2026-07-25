@@ -47,7 +47,10 @@ def _get_bool(name: str, default: bool) -> bool:
 class LLMSettings:
     """Groq LLM (free tier) — the reasoning engine."""
     api_key: str = field(default_factory=lambda: _get("GROQ_API_KEY", ""))
-    model: str = field(default_factory=lambda: _get("GROQ_MODEL", "llama-3.3-70b-versatile"))
+    # llama-3.1-8b-instant: fast + the largest free-tier daily token budget, and
+    # plenty for short kid-friendly answers. (compound-* / 70b models share the
+    # small 100k tokens/day free limit and run out fast.)
+    model: str = field(default_factory=lambda: _get("GROQ_MODEL", "llama-3.1-8b-instant"))
     temperature: float = field(default_factory=lambda: _get_float("LLM_TEMPERATURE", 0.7))
     max_tokens: int = field(default_factory=lambda: _get_int("LLM_MAX_TOKENS", 120))
     top_p: float = field(default_factory=lambda: _get_float("LLM_TOP_P", 0.9))

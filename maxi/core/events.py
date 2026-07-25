@@ -39,6 +39,7 @@ class Outgoing(str, Enum):
     STATE_CHANGE = "state_change"        # {state} — drives the robot face/animation
     TRANSCRIPTION = "transcription"      # echo the recognized text back to the UI
     RESPONSE = "response"                # a full (non-streaming) text response
+    RESPONSE_START = "response_start"    # begin a streamed response (UI opens a bubble)
     RESPONSE_CHUNK = "response_chunk"    # a streamed token/sentence of the response
     RESPONSE_COMPLETE = "response_complete"
     AUDIO_CHUNK = "audio_chunk"          # {audio(base64), format} — a sentence of TTS
@@ -83,6 +84,10 @@ def state_change(state: Phase | str, **extra: Any) -> Dict[str, Any]:
 
 def transcription(text: str) -> Dict[str, Any]:
     return _msg(Outgoing.TRANSCRIPTION, text=text)
+
+
+def response_start(stream_id: str = "default") -> Dict[str, Any]:
+    return _msg(Outgoing.RESPONSE_START, streamId=stream_id)
 
 
 def response_chunk(text: str, stream_id: str = "default") -> Dict[str, Any]:

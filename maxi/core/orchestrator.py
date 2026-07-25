@@ -157,6 +157,8 @@ class Orchestrator:
     async def _run_skill(self, skill, ctx: SkillContext) -> None:
         me = asyncio.current_task()
         try:
+            # Open a streaming message bubble on the tablet before any chunks.
+            await self.transport.emit(events.response_start())
             await skill.handle(ctx)
             await self.transport.emit(events.response_complete())
             # Answer done → go back to WAITING (wake-gated). The child says
