@@ -8,10 +8,12 @@ cancellable task, so a child can barge in on a long explanation.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from maxi.core import events
 from maxi.core.events import Mode
@@ -37,6 +39,7 @@ _OP_WORDS = {
 # Symbols the browser speech engine may produce (e.g. "2 + 2", "3 × 4").
 _OP_SYMBOLS = {"+": "+", "-": "-", "×": "*", "*": "*", "x": "*", "÷": "/", "/": "/"}
 _OP_SPOKEN = {"+": "plus", "-": "minus", "*": "times", "/": "divided by"}
+_OP_DISPLAY = {"+": "+", "-": "−", "*": "×", "/": "÷"}  # + − × ÷
 
 
 @dataclass
@@ -95,10 +98,19 @@ def _calc(a: int, op: str, b: int) -> Optional[float]:
     return None
 
 
+def _num_str(v: Any) -> str:
+    """Render a number without a trailing .0 (e.g. 15.0 -> '15'); pass strings through."""
+    try:
+        f = float(v)
+        return str(int(f)) if f.is_integer() else str(v)
+    except (TypeError, ValueError):
+        return str(v)
+
+
 def _quick_solve(text: str) -> Optional[Solved]:
     op = _detect_op(text)
     nums = _extract_numbers(text)
-    if op is None or len(nums) < 2:
+    if op is None or len(nums) != 2:
         return None
     a, b = nums[0], nums[1]
     result = _calc(a, op, b)
@@ -106,6 +118,39 @@ def _quick_solve(text: str) -> Optional[Solved]:
         return None
     basic = op in "+-*/" and float(result).is_integer() and 0 <= result <= 10 and 0 <= a <= 10 and 0 <= b <= 10
     return Solved(a=a, b=b, op=op, result=result, basic=basic)
+
+
+def _multi_solve(text: str) -> Optional[Dict[str, Any]]:
+    """3+ numbers with one operator → left-to-right steps, computed locally."""
+    op = _detect_op(text)
+    nums = _extract_numbers(text)
+    if op is None or len(nums) < 3:
+        return None
+    word = _OP_SPOKEN[op]
+    sym = _OP_DISPLAY[op]
+    running = nums[0]
+    steps: List[Dict[str, Any]] = []
+    for i in range(1, len(nums)):
+        b = nums[i]
+        prev = running
+        running = _calc(prev, op, b)
+        if running is None:
+            return None
+        r = int(running) if float(running).is_integer() else running
+        p = int(prev) if float(prev).is_integer() else prev
+        steps.append({
+            "step": i,
+            "operation": f"{p} {sym} {b}",
+            "result": r,
+            "description": f"{p} {word} {b} makes {r}.",
+        })
+    result = int(running) if float(running).is_integer() else running
+    return {
+        "original": " ".join(f"{n}" for n in nums),
+        "result": result,
+        "steps": steps,
+        "breakdown": f"Putting it all together, we get {result}.",
+    }
 
 
 class MathSkill(Skill):
@@ -136,8 +181,15 @@ class MathSkill(Skill):
         solved = _quick_solve(text)
         if solved is not None:
             await self._narrate(ctx, solved)
-        else:
-            await self._llm_solve(ctx, text)
+            return
+        multi = _multi_solve(text)
+        if multi is not None:
+            await self._walk_steps(
+                ctx, multi["original"], multi["result"], multi["steps"], multi["breakdown"],
+                intro="Let's add these up one step at a time!",
+            )
+            return
+        await self._llm_solve(ctx, text)
 
     async def _narrate(self, ctx: SkillContext, s: Solved) -> None:
         """Teach the sum: show it on screen, count it on the fingers if it fits."""
@@ -196,20 +248,87 @@ class MathSkill(Skill):
             return f"Sharing {a} into {b} equal parts gives {result_str} in each part."
         return ""
 
+    _JSON_SYSTEM = (
+        "You are Maxi, a fun, patient math teacher for children aged 6-12. Solve the "
+        "math problem or word problem below. Reply with ONLY a JSON object (no extra "
+        "text) in EXACTLY this shape:\n"
+        '{"original_question": string, "answer": number or string, '
+        '"intro": one short kid-friendly sentence, '
+        '"steps": [{"step": integer starting at 1, "operation": short string like '
+        '"3 + 2", "result": number, "description": one short simple sentence '
+        'explaining this step}], "breakdown": one short sentence tying it together}\n'
+        "Use 2 to 4 steps. Simple words a young child understands. No emojis."
+    )
+
     async def _llm_solve(self, ctx: SkillContext, text: str) -> None:
-        """Word problems / bigger numbers → short Groq explanation."""
+        """Word problems / multi-step → structured step-by-step solution with UI."""
         if not ctx.llm.enabled:
             await ctx.speaker.say("That's a tricky one and my math brain is offline. Try a smaller sum!")
             return
+
         messages = [
-            {"role": "system", "content": (
-                "You are Maxi, a fun math teacher for kids 6-12. Solve the problem and "
-                "explain it in ONE or TWO very short, simple sentences. End with the final "
-                "answer clearly. No emojis."
-            )},
+            {"role": "system", "content": self._JSON_SYSTEM},
             {"role": "user", "content": text},
         ]
-        spoken = await ctx.speaker.say_stream(ctx.llm, messages)
-        await ctx.memory.add_user(text)
-        if spoken:
-            await ctx.memory.add_assistant(spoken)
+        data: Optional[Dict[str, Any]] = None
+        try:
+            raw = await ctx.llm.complete(messages, json_mode=True, max_tokens=700, temperature=0.2)
+            data = json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("math JSON solve failed (%s); falling back to spoken answer", exc)
+
+        if not isinstance(data, dict):
+            # Graceful fallback: just explain it aloud.
+            spoken = await ctx.speaker.say_stream(ctx.llm, [
+                {"role": "system", "content": (
+                    "You are Maxi, a fun math teacher for kids 6-12. Solve and explain "
+                    "in ONE or TWO very short, simple sentences. No emojis.")},
+                {"role": "user", "content": text},
+            ])
+            await ctx.memory.add_user(text)
+            if spoken:
+                await ctx.memory.add_assistant(spoken)
+            return
+
+        original = str(data.get("original_question") or text)
+        answer = data.get("answer")
+        steps = data.get("steps") or []
+        breakdown = str(data.get("breakdown") or "")
+        intro = str(data.get("intro") or "Let's solve this step by step!")
+
+        if steps:
+            await self._walk_steps(ctx, original, answer, steps, breakdown, intro=intro)
+        else:
+            await ctx.speaker.say(intro)
+            await ctx.speaker.say(f"The answer is {answer}!")
+            if breakdown:
+                await ctx.speaker.say(breakdown)
+            await ctx.memory.add_user(text)
+            await ctx.memory.add_assistant(f"{original} equals {answer}")
+
+    async def _walk_steps(
+        self, ctx: SkillContext, original: str, result: Any,
+        steps: List[Dict[str, Any]], breakdown: str, intro: str = "",
+    ) -> None:
+        """Render the steps in the UI, then speak each one while highlighting it."""
+        result_str = _num_str(result)
+        # 1) Render the whole step list in the UI.
+        await ctx.emit(events.math_advanced(original, result_str, steps, breakdown, intro))
+        # 2) Speak the intro.
+        if intro:
+            await ctx.speaker.say(intro)
+        # 3) Walk each step: highlight it in the UI, then explain it. Pace to the
+        #    spoken length so the highlight stays in sync with the voice and the
+        #    child can follow each step.
+        for idx, step in enumerate(steps, start=1):
+            num = step.get("step", idx)
+            await ctx.emit(events.highlight_step(num))
+            desc = str(step.get("description") or f"{step.get('operation', '')} equals {step.get('result', '')}.")
+            await ctx.speaker.say(desc)
+            await asyncio.sleep(max(0.6, len(desc.split()) / 2.7 + 0.3))
+        # 4) Final answer + wrap-up.
+        await ctx.speaker.say(f"So the answer is {result_str}!")
+        if breakdown:
+            await ctx.speaker.say(breakdown)
+        await ctx.memory.add_user(ctx.text)
+        await ctx.memory.add_assistant(f"{original} equals {result_str}")

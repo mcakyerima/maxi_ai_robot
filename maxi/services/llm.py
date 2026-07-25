@@ -54,16 +54,19 @@ class LLMService:
 
     async def complete(
         self, messages: List[Message], *, max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        temperature: Optional[float] = None, json_mode: bool = False,
     ) -> str:
         client = self._get_client()
-        resp = await client.chat.completions.create(
+        kwargs: dict = dict(
             model=self.model,
             messages=messages,
             temperature=settings.llm.temperature if temperature is None else temperature,
             max_tokens=settings.llm.max_tokens if max_tokens is None else max_tokens,
             top_p=settings.llm.top_p,
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = await client.chat.completions.create(**kwargs)
         return (resp.choices[0].message.content or "").strip()
 
     async def stream(

@@ -46,6 +46,7 @@ class Outgoing(str, Enum):
     SPEAKING_SCRIPT = "speaking_script"  # {text} — what Maxi is saying NOW (echo rejection)
     FINGER_POSE = "finger_pose"          # {pose} — mirror hand movement in the UI
     MATH_RESULT = "math_result"          # {A,B,OP,result,explanation,mode} — math display
+    HIGHLIGHT_STEP = "highlight_step"    # {step_number} — highlight a solution step
     ERROR = "error"                      # {message}
     PONG = "pong"
 
@@ -120,6 +121,18 @@ def math_result(a: Any, b: Any, op: str, result: Any, explanation: str, mode: st
     """Drive the math UI: equation display + (for finger_counting) UI hand animation."""
     return _msg(Outgoing.MATH_RESULT, A=a, B=b, OP=op, result=result,
                 explanation=explanation, mode=mode)
+
+
+def math_advanced(original_question: str, result: Any, steps: list,
+                  breakdown: str = "", explanation: str = "") -> Dict[str, Any]:
+    """Drive the step-by-step UI (word problems / multi-step): renders a step list."""
+    return _msg(Outgoing.MATH_RESULT, mode="advanced", original_question=original_question,
+                result=result, steps=steps, breakdown=breakdown, explanation=explanation)
+
+
+def highlight_step(step_number: int) -> Dict[str, Any]:
+    """Highlight the given step in the UI while Maxi explains it."""
+    return _msg(Outgoing.HIGHLIGHT_STEP, step_number=step_number)
 
 
 def error(message: str) -> Dict[str, Any]:
