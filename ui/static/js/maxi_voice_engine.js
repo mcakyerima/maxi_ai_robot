@@ -245,12 +245,19 @@
           this._decide("ignored capture: self-echo");
           return;
         }
+        // Send an utterance that PRESERVES math operators. `normalize()` strips
+        // symbols (so "2 + 2" would become "2 2" and lose the "+"); here we keep
+        // +, -, ×, ÷, = so the math parser can see the operation.
+        const utterance = finalText
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim();
         // Got the question. Stop listening immediately and DON'T let onend
         // restart the recognizer (that caused a stray extra mic beep before
         // processing). Maxi will now think; the backend drives the next state.
         this._setMode("OFF");
         this._endListen();
-        this.onUtterance(norm, finalConf || 1);
+        this.onUtterance(utterance || norm, finalConf || 1);
       }
     }
 

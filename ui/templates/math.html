@@ -1391,8 +1391,11 @@
                         
                     case 'idle':
                         this._dropIncoming = false; // safety: don't get stuck dropping
-                        this.clearFingers();
-                        this.resetUIState();
+                        // Reset the mic button/status so it doesn't look "stuck speaking".
+                        this.updateVoiceStatus('Tap the mic for a math question', false);
+                        this.updateStatus("Say 'Hey Maxi' or tap the mic to start...");
+                        this.micButton.disabled = false;
+                        this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
                         // Stay echo-safe while tail audio plays; onAudioComplete → WAKE.
                         this.voiceEngine.setMode(this.audioPlayer.isPlaying ? 'BARGE_IN' : 'WAKE');
                         break;
@@ -1402,13 +1405,21 @@
                 const { A, B, OP, result, explanation, mode } = data;
                 this.currentProblem = data;
                 
-                if (mode === 'finger_counting' && A <= 10 && B <= 10 && result <= 10) {
-                    // Basic math with finger visualization
+                if (mode === 'finger_counting' && result >= 0 && result <= 10) {
+                    // Answer fits on the 10 fingers.
                     this.displayMathEquation(A, OP, B, result);
                     this.updateExplanation(explanation);
-                    this.startFingerSequence(data);
+                    if (A <= 10 && B <= 10) {
+                        // Count out both operands then the result.
+                        this.startFingerSequence(data);
+                    } else {
+                        // Operands too big to count out — just show the answer.
+                        this.clearFingers();
+                        this.showResult(result);
+                        this.triggerCelebration();
+                    }
                 } else {
-                    // Advanced math without finger visualization
+                    // Answer is bigger than 10 → show it in the UI, no fingers.
                     this.displayAdvancedMath(data);
                     this.clearFingers();
                 }

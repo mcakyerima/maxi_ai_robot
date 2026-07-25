@@ -47,4 +47,8 @@ INTERRUPT_ACKS = [
     "I'm listening!",
     "Go ahead!",
     "Yes, tell me!",
+    "Mhm?",
+    "What's up?",
+    "Sure, ask me!",
+    "Okay, I'm all ears!",
 ]

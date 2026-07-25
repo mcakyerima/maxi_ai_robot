@@ -30,10 +30,12 @@ _WORD_NUMBERS = {
 
 _OP_WORDS = {
     "+": ["plus", "add", "added to", "and", "sum of"],
-    "-": ["minus", "subtract", "take away", "less", "difference"],
+    "-": ["minus", "subtract", "take away", "takeaway", "less", "difference"],
     "*": ["times", "multiply", "multiplied by", "product of"],
     "/": ["divided by", "divide", "over", "shared"],
 }
+# Symbols the browser speech engine may produce (e.g. "2 + 2", "3 × 4").
+_OP_SYMBOLS = {"+": "+", "-": "-", "×": "*", "*": "*", "x": "*", "÷": "/", "/": "/"}
 _OP_SPOKEN = {"+": "plus", "-": "minus", "*": "times", "/": "divided by"}
 
 
@@ -64,12 +66,17 @@ def _extract_numbers(text: str) -> List[int]:
 
 def _detect_op(text: str) -> Optional[str]:
     low = text.lower()
+    # Words first (so "six" isn't mistaken for the "x" times-symbol).
     for op, words in _OP_WORDS.items():
         if any(w in low for w in words):
             return op
-    for sym in ("+", "-", "*", "x", "/"):
-        if sym in low:
-            return "*" if sym == "x" else sym
+    padded = f" {low} "
+    for sym, op in _OP_SYMBOLS.items():
+        if sym == "x":
+            if " x " in padded:  # standalone x only, not inside a word
+                return op
+        elif sym in low:
+            return op
     return None
 
 
@@ -133,30 +140,61 @@ class MathSkill(Skill):
             await self._llm_solve(ctx, text)
 
     async def _narrate(self, ctx: SkillContext, s: Solved) -> None:
-        """Speak the sum while counting it out on the hands."""
+        """Teach the sum: show it on screen, count it on the fingers if it fits."""
+        result_int = int(s.result) if float(s.result).is_integer() else None
+        result_str = str(result_int) if result_int is not None else str(s.result)
+
+        # Answers 0-10 count out on the 10 fingers; bigger answers show in the UI.
+        is_finger = result_int is not None and 0 <= result_int <= 10
+        can_count = is_finger and 0 <= s.a <= 10 and 0 <= s.b <= 10
+        explanation = self._explain(s, result_str)
+        mode = "finger_counting" if is_finger else "advanced"
+
+        # Drive the UI: equation display + (finger mode) animated hands.
+        await ctx.emit(events.math_result(
+            s.a, s.b, s.op,
+            result_int if result_int is not None else s.result,
+            explanation, mode,
+        ))
+
+        word = _OP_SPOKEN[s.op]
+        await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
+
         hands = ctx.hands
-        result_str = str(int(s.result)) if float(s.result).is_integer() else str(s.result)
-
-        await ctx.speaker.say(f"Let's count! {s.a} {_OP_SPOKEN[s.op]} {s.b}.")
-
-        if hands and s.basic:
+        if can_count and hands:
             await hands.show_number(s.a, "right")
-            await self._mirror(ctx, hands)
             await ctx.speaker.say(f"We start with {s.a}.")
             if s.op == "+":
-                await ctx.speaker.say(f"Now we add {s.b} more.")
+                await ctx.speaker.say(f"Then we add {s.b} more.")
             elif s.op == "-":
-                await ctx.speaker.say(f"Now we take away {s.b}.")
-            await hands.show_number(int(s.result), "right")
-            await self._mirror(ctx, hands)
+                await ctx.speaker.say(f"Then we take {s.b} away.")
+            elif s.op == "*":
+                await ctx.speaker.say(f"That's {s.a}, {s.b} times.")
+            await hands.show_number(result_int, "right")
+        elif is_finger and hands:
+            await hands.show_number(result_int, "right")
 
         await ctx.speaker.say(f"The answer is {result_str}!")
+        if explanation:
+            await ctx.speaker.say(explanation)
+
         await ctx.memory.add_user(ctx.text)
-        await ctx.memory.add_assistant(f"{s.a} {_OP_SPOKEN[s.op]} {s.b} equals {result_str}")
+        await ctx.memory.add_assistant(f"{s.a} {word} {s.b} equals {result_str}")
 
         if hands:
             await hands.close_all()
-            await self._mirror(ctx, hands)
+
+    def _explain(self, s: Solved, result_str: str) -> str:
+        a, b = s.a, s.b
+        if s.op == "+":
+            return f"When we put {a} and {b} together, we count all the way up to {result_str}."
+        if s.op == "-":
+            return f"Starting at {a} and taking {b} away leaves {result_str}."
+        if s.op == "*":
+            return f"{b} groups of {a} make {result_str} altogether."
+        if s.op == "/":
+            return f"Sharing {a} into {b} equal parts gives {result_str} in each part."
+        return ""
 
     async def _llm_solve(self, ctx: SkillContext, text: str) -> None:
         """Word problems / bigger numbers → short Groq explanation."""
@@ -175,10 +213,3 @@ class MathSkill(Skill):
         await ctx.memory.add_user(text)
         if spoken:
             await ctx.memory.add_assistant(spoken)
-
-    async def _mirror(self, ctx: SkillContext, hands) -> None:
-        """Reflect the current hand pose in the tablet UI."""
-        try:
-            await ctx.emit(events.finger_pose(hands.pose()))
-        except Exception:  # noqa: BLE001
-            pass

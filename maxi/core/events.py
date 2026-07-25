@@ -45,6 +45,7 @@ class Outgoing(str, Enum):
     AUDIO_CHUNK = "audio_chunk"          # {audio(base64), format} — a sentence of TTS
     SPEAKING_SCRIPT = "speaking_script"  # {text} — what Maxi is saying NOW (echo rejection)
     FINGER_POSE = "finger_pose"          # {pose} — mirror hand movement in the UI
+    MATH_RESULT = "math_result"          # {A,B,OP,result,explanation,mode} — math display
     ERROR = "error"                      # {message}
     PONG = "pong"
 
@@ -113,6 +114,12 @@ def speaking_script(text: str) -> Dict[str, Any]:
 
 def finger_pose(pose: Dict[str, Any]) -> Dict[str, Any]:
     return _msg(Outgoing.FINGER_POSE, pose=pose)
+
+
+def math_result(a: Any, b: Any, op: str, result: Any, explanation: str, mode: str) -> Dict[str, Any]:
+    """Drive the math UI: equation display + (for finger_counting) UI hand animation."""
+    return _msg(Outgoing.MATH_RESULT, A=a, B=b, OP=op, result=result,
+                explanation=explanation, mode=mode)
 
 
 def error(message: str) -> Dict[str, Any]:
