@@ -149,6 +149,9 @@ class VoiceSettings:
         "https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz"))
     vosk_sdk_url: str = field(default_factory=lambda: _get(
         "MAXI_VOSK_SDK_URL", "https://cdn.jsdelivr.net/npm/vosk-browser@0.0.5/dist/vosk.js"))
+    # Reject wake matches below this average word confidence (0..1). Raise toward
+    # 0.8 if background noise/chatter still triggers it; lower if it misses real ones.
+    vosk_min_confidence: float = field(default_factory=lambda: _get_float("MAXI_VOSK_MIN_CONFIDENCE", 0.6))
 
     @property
     def wake_enabled(self) -> bool:

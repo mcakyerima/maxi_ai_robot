@@ -207,5 +207,25 @@ const tick = () => new Promise((r) => setTimeout(r, 0)); // flush provider micro
     engine.usingProvider() === false && engine._listening === false);
 }
 
+// Scenario P: a WAKE-ONLY provider (supportsBargeIn=false, e.g. Vosk) must NOT
+// listen while Maxi speaks — the mic is released, so Maxi can't self-interrupt.
+{
+  const p = new FakeWakeProvider();
+  p.supportsBargeIn = false;
+  const { engine, events } = makeEngine({ wakeProvider: p });
+  engine.start();
+  engine.setMode("WAKE");
+  await tick();
+  const listenedInWake = p.listenCount;
+  engine.setMode("BARGE_IN");
+  await tick();
+  check("P: wake-only provider releases the mic while speaking (no barge-in)",
+    p.listenCount === listenedInWake && p.pauseCount >= 1 && engine._listening === false);
+  // And a stray hit while speaking does nothing (provider isn't even listening).
+  p.fire("hey maxi");
+  check("P2: wake-only provider can't fire an interrupt while speaking",
+    events.interrupt.length === 0);
+}
+
 console.log(failures === 0 ? "\nALL VOICE-ENGINE TESTS PASSED" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

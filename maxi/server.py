@@ -167,6 +167,7 @@ def voice_config_js():
         "voskSdkUrl": v.vosk_sdk_url,
         "voskModelUrl": "/models/" + v.vosk_model_file,
         "wakePhrase": v.wake_phrase,
+        "voskMinConfidence": v.vosk_min_confidence,
     }
     if v.model_url:
         cfg["modelUrl"] = v.model_url

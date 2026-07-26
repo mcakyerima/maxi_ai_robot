@@ -85,6 +85,7 @@
           /[?&](wake|continuous)=1/.test(window.location.search || ""));
 
       this.mode = "OFF";
+      this._modeSeq = 0; // guards async mode transitions against supersession
       this._recognition = null;
       this._wantRunning = false;
       this._listening = false;
@@ -152,52 +153,59 @@
       this._hud();
     }
 
-    // Turn the mic on/off to match the current mode.
+    // Turn the mic on/off to match the current mode. Provider control is async
+    // (getUserMedia/AudioContext), so we sequence it and guard against a newer
+    // mode superseding an in-flight transition (_modeSeq).
     _applyMode() {
       if (!this._wantRunning) return;
+      const seq = ++this._modeSeq;
+      Promise.resolve()
+        .then(() => this._applyModeAsync(seq))
+        .catch((e) => this.onError("apply-mode: " + ((e && e.message) || e)));
+    }
+
+    async _applyModeAsync(seq) {
+      const mode = this.mode;
       const provider = this.usingProvider();
-      if (this.mode === "CAPTURE") {
-        // The question is captured by webkitSpeechRecognition. Release the
-        // provider's mic first so the two don't fight over the microphone.
-        if (provider) this._providerPause();
-        this._beginListen();
-      } else if (this.mode === "WAKE" || this.mode === "BARGE_IN") {
+      // A provider may not be safe for barge-in (e.g. Vosk mis-hears Maxi's own
+      // voice). Such providers power WAKE only; the mic is OFF while Maxi speaks.
+      const bargeOk = this._wakeProvider && this._wakeProvider.supportsBargeIn !== false;
+
+      if (mode === "CAPTURE") {
+        // The question is captured by webkitSpeechRecognition. FULLY release the
+        // provider's mic first (await) so the two never fight over the microphone.
         if (provider) {
-          // Beepless: the on-device model listens; webkitSpeechRecognition stays off.
+          try { await this._wakeProvider.pause(); } catch (e) { /* ignore */ }
+        }
+        if (seq !== this._modeSeq) return; // superseded by a newer mode
+        this._beginListen();
+      } else if (mode === "WAKE" || (mode === "BARGE_IN" && bargeOk)) {
+        // Beepless listening via the provider; webkitSpeechRecognition stays off.
+        if (provider) {
           this._endListen();
-          this._providerListen();
+          try { await this._wakeProvider.listen(); }
+          catch (e) { this.onError("wake-provider-listen: " + ((e && e.message) || e)); }
         } else if (this._continuous) {
           this._beginListen();
         } else {
-          this._endListen(); // push-to-talk: silent while idle / speaking
+          this._endListen(); // push-to-talk: silent while idle
         }
-      } else {
+      } else if (mode === "BARGE_IN") {
+        // Speaking, and the provider can't safely barge in → mic fully OFF.
+        // Interrupt via the mic button instead (no false self-interrupts).
         this._endListen();
-        if (provider) this._providerPause();
+        if (provider) { try { await this._wakeProvider.pause(); } catch (e) {} }
+      } else {
+        // OFF / THINKING / etc.
+        this._endListen();
+        if (provider) { try { await this._wakeProvider.pause(); } catch (e) {} }
       }
     }
 
-    // -- wake provider control (async, fire-and-forget with internal guards) ---
-    _providerListen() {
-      const p = this._wakeProvider;
-      if (!p || !p.isReady || !p.isReady()) return;
-      Promise.resolve()
-        .then(() => p.listen())
-        .catch((e) => this.onError("wake-provider-listen: " + (e && e.message || e)));
-    }
-    _providerPause() {
-      const p = this._wakeProvider;
-      if (!p || !p.pause) return;
-      Promise.resolve()
-        .then(() => p.pause())
-        .catch(() => {});
-    }
     _providerRelease() {
       const p = this._wakeProvider;
       if (!p || !p.release) return;
-      Promise.resolve()
-        .then(() => p.release())
-        .catch(() => {});
+      Promise.resolve().then(() => p.release()).catch(() => {});
     }
 
     // A wake-word hit from the on-device model. Route it by the current mode:
@@ -210,6 +218,11 @@
         this._decide("WAKE (provider: " + label + ")");
         this.onWake(label || "");
       } else if (this.mode === "BARGE_IN") {
+        // Wake-only providers (e.g. Vosk) must NEVER interrupt — they mis-hear
+        // Maxi's own voice. Ignore any stray hit that slips in while speaking.
+        if (!this._wakeProvider || this._wakeProvider.supportsBargeIn === false) {
+          return this._decide("ignored: provider not barge-in capable");
+        }
         if (this._speakingSince && now - this._speakingSince < ONSET_DEAF_MS) {
           return this._decide("ignored: onset-deafness");
         }

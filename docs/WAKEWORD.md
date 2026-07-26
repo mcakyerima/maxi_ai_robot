@@ -51,10 +51,27 @@ runtime CDN, no CORS, persists across redeploys. The tablet caches it after firs
 | `MAXI_VOSK_MODEL_FILE` | `vosk-model-small-en-us-0.15.tar.gz` | Filename on disk + at `/models/…`. |
 | `MAXI_VOSK_MODEL_SOURCE` | ccoreilly gh tar.gz | One-time seed URL (verified reachable, ~41 MB). |
 | `MAXI_VOSK_SDK_URL` | jsDelivr `vosk-browser@0.0.5` | The small SDK (`vosk.js`). |
+| `MAXI_VOSK_MIN_CONFIDENCE` | `0.6` | Min avg word confidence to accept a wake (raise to `0.8` if noisy). |
 
 **Tradeoffs vs Porcupine:** bigger one-time download (cached after), more tablet CPU
-(mitigated by the tiny grammar + only running in WAKE/BARGE_IN), accuracy depends on
-the small model. No account, though, and the real "Hey Maxi" phrase out of the box.
+(mitigated by the tiny grammar), accuracy depends on the small model. No account,
+though, and the real "Hey Maxi" phrase out of the box.
+
+### Vosk is WAKE-ONLY (no hands-free barge-in) — by design
+A small STT model mis-hears **Maxi's own voice** (and background chatter) as the wake
+phrase. If Vosk listened while Maxi talked, it would falsely "interrupt" itself (you'd
+hear an "I'm listening!" ack and get re-prompted — the double-mic bug). So the Vosk
+provider sets `supportsBargeIn = false`: **the mic is OFF while Maxi speaks**, and Vosk
+only listens for the wake phrase while idle. To interrupt mid-answer, **tap the mic
+button**. (Porcupine, being a true wake-word DNN, is echo-safe and still does hands-free
+barge-in.)
+
+### Tuning false wakes
+Detection uses FINAL results only, whole-phrase token matching, and a per-word
+**confidence gate** (`MAXI_VOSK_MIN_CONFIDENCE`, default `0.6`). If background noise or
+other people talking still wakes Maxi, **raise it toward `0.8`**; if it misses real
+"Hey Maxi"s, lower it. The browser console logs `[vosk] ignored low-confidence wake …`
+and `[vosk] WAKE …` so you can see what it's hearing and pick a threshold.
 
 ---
 
