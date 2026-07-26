@@ -74,6 +74,15 @@ only listens for the wake phrase while idle. To interrupt mid-answer, **tap the 
 button**. (Porcupine, being a true wake-word DNN, is echo-safe and still does hands-free
 barge-in.)
 
+### Spoken acknowledgement (Alexa-style)
+After the wake word, the tablet speaks a short random ack ("I'm here!", "Yes?",
+"Mhm?", …) via the browser's `speechSynthesis`, THEN opens the question mic the instant
+it finishes. This gives the child a natural "go ahead" cue and fills the exact window
+the wake model needs to release the mic and cool down. It's local (no backend/network),
+so timing is precise; if speech synthesis is unavailable it falls back to a short
+silent settle. Wired via the engine's `onWakeAck` hook (see `speakWakeAck()` in
+chat.html/math.html).
+
 ### Tuning false wakes
 Detection uses FINAL results only, whole-phrase token matching, and a per-word
 **confidence gate** (`MAXI_VOSK_MIN_CONFIDENCE`, default `0.6`). If background noise or

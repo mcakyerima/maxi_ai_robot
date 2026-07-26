@@ -994,10 +994,43 @@
                 return new MaxiVoiceEngine({
                     wakeProvider: this._wakeProvider,
                     onWake: () => this.handleVoiceWake(),
+                    onWakeAck: () => this.speakWakeAck(),
                     onUtterance: (text) => this.handleVoiceUtterance(text),
                     onInterrupt: () => this.handleVoiceInterrupt(),
                     onInterim: (text) => { if (text) this.updateVoiceStatus('Listening: ' + text, true); },
                     onError: (e) => console.warn('Voice engine:', e)
+                });
+            }
+
+            // Alexa-style spoken ack after the wake word (browser speechSynthesis,
+            // local + precise). Resolves when speech ends → engine opens the mic
+            // immediately after. The wake model is paused (cooling) while it speaks.
+            speakWakeAck() {
+                return new Promise((resolve) => {
+                    const acks = ["I'm here!", "Yes?", "Mhm?", "What's up?", "Go ahead!", "Yeah?", "I'm listening!"];
+                    const text = acks[Math.floor(Math.random() * acks.length)];
+                    this.updateVoiceStatus(text, true);
+                    try {
+                        const synth = window.speechSynthesis;
+                        if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+                            return setTimeout(resolve, 450);
+                        }
+                        synth.cancel();
+                        const u = new SpeechSynthesisUtterance(text);
+                        u.rate = 1.05; u.pitch = 1.15; u.lang = 'en-US';
+                        const voices = synth.getVoices() || [];
+                        const pref = voices.find((v) => /en/i.test(v.lang) &&
+                            /female|samantha|zira|google us english|emma|karen|tessa/i.test(v.name));
+                        if (pref) u.voice = pref;
+                        let done = false;
+                        const finish = () => { if (done) return; done = true; resolve(); };
+                        u.onend = () => setTimeout(finish, 120);
+                        u.onerror = () => finish();
+                        setTimeout(finish, 2500);
+                        synth.speak(u);
+                    } catch (e) {
+                        setTimeout(resolve, 450);
+                    }
                 });
             }
 

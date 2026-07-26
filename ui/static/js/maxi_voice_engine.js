@@ -71,6 +71,11 @@
       this.onInterim = opts.onInterim || function () {};
       this.onModeChange = opts.onModeChange || function () {};
       this.onError = opts.onError || function () {};
+      // Optional: after a wake word, speak a short acknowledgement ("I'm here!")
+      // and resolve when it finishes. It fills the settle window (Vosk cools /
+      // releases the mic) and is the child's cue to talk — the capture mic opens
+      // the instant it resolves. If absent, a fixed delay is used instead.
+      this.onWakeAck = opts.onWakeAck || null;
 
       // Optional on-device wake-word provider (beepless hands-free). When present
       // and ready(), it powers the WAKE + BARGE_IN stages over getUserMedia; its
@@ -189,14 +194,17 @@
           try { await this._wakeProvider.pause(); } catch (e) { /* ignore */ }
         }
         if (seq !== this._modeSeq) return; // superseded by a newer mode
-        // If this capture follows a wake word, give the model a beat to settle and
-        // let the wake audio end before we start listening (and beep).
+        // This capture follows a wake word: speak a short acknowledgement (which
+        // also gives the model time to release the mic), THEN open the question
+        // mic. The provider was already paused above, so nothing holds the mic
+        // while the ack plays. Falls back to a fixed delay if no ack hook is set.
         if (this._wakePending) {
           this._wakePending = false;
-          if (this._postWakeDelayMs > 0) {
-            await this._sleep(this._postWakeDelayMs);
-            if (seq !== this._modeSeq) return;
-          }
+          try {
+            if (typeof this.onWakeAck === "function") await this.onWakeAck();
+            else if (this._postWakeDelayMs > 0) await this._sleep(this._postWakeDelayMs);
+          } catch (e) { /* ack failure must never block listening */ }
+          if (seq !== this._modeSeq) return;
         }
         this._beginListen();
       } else if (mode === "WAKE" || (mode === "BARGE_IN" && bargeOk)) {
