@@ -91,7 +91,10 @@
       this._audioCtx = null;
       this._source = null;
       this._processor = null;
+      this._sink = null;
       this._firedAt = 0;
+      this._chain = null;   // serializes listen()/pause()
+      this._target = null;  // desired mic state, latest wins
     }
 
     configured() { return !!this.modelUrl; }
@@ -182,9 +185,39 @@
       if (typeof this.onKeyword === "function") this.onKeyword(phrase);
     }
 
-    async listen() {
-      if (!this._ready || !this._recognizer) return;
-      if (this._subscribed) return;
+    // listen()/pause() are SERIALIZED through a single promise chain and coalesce
+    // to the latest target. This is critical: the engine flips WAKE↔CAPTURE↔BARGE_IN
+    // rapidly, and without serialization a superseded getUserMedia could resolve
+    // AFTER a pause() and leave Vosk holding the mic — which then blocks
+    // webkitSpeechRecognition forever (the "mic beeps on/off, never transcribes" bug).
+    async listen() { return this._enqueue("listen"); }
+    async pause() { return this._enqueue("pause"); }
+
+    _enqueue(target) {
+      this._target = target;
+      this._chain = (this._chain || Promise.resolve())
+        .then(() => this._reconcile())
+        .catch((e) => warn("reconcile error:", (e && e.message) || e));
+      return this._chain;
+    }
+
+    async _reconcile() {
+      const want = this._target; // latest wins — coalesce rapid toggles
+      if (want === "listen") {
+        if (!this._ready || !this._recognizer || this._subscribed) return;
+        await this._doListen();
+      } else {
+        if (!this._subscribed) return;
+        await this._teardownAudio();
+        this._subscribed = false;
+        log("mic released (wake paused)");
+      }
+    }
+
+    async _doListen() {
+      // Small settle so a just-released mic (webkitSpeechRecognition) is free.
+      await this._sleep(120);
+      if (this._target !== "listen") return; // superseded while settling
       this._media = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -195,8 +228,14 @@
         },
         video: false,
       });
+      if (this._target !== "listen") { // superseded during getUserMedia
+        try { this._media.getTracks().forEach((t) => t.stop()); } catch (e) {}
+        this._media = null;
+        return;
+      }
       const AudioCtx = global.AudioContext || global.webkitAudioContext;
       this._audioCtx = new AudioCtx();
+      try { if (this._audioCtx.state === "suspended") await this._audioCtx.resume(); } catch (e) {}
       this._source = this._audioCtx.createMediaStreamSource(this._media);
       this._processor = this._audioCtx.createScriptProcessor(4096, 1, 1);
       this._processor.onaudioprocess = (event) => {
@@ -204,29 +243,32 @@
           if (this._recognizer) this._recognizer.acceptWaveform(event.inputBuffer);
         } catch (e) { /* transient buffer errors are non-fatal */ }
       };
+      // Route through a MUTED sink so the mic is never echoed to the speaker.
+      this._sink = this._audioCtx.createGain();
+      this._sink.gain.value = 0;
       this._source.connect(this._processor);
-      this._processor.connect(this._audioCtx.destination);
+      this._processor.connect(this._sink);
+      this._sink.connect(this._audioCtx.destination);
       this._subscribed = true;
       log("mic on (listening for '" + this.wakePhrase + "')");
     }
 
-    async pause() {
-      if (!this._subscribed) return;
-      this._teardownAudio();
-      this._subscribed = false;
-      log("mic released (wake paused)");
-    }
-
-    _teardownAudio() {
+    async _teardownAudio() {
+      // Stop the mic tracks FIRST (releases the device), then tear down the graph.
+      try { if (this._media) this._media.getTracks().forEach((tr) => tr.stop()); } catch (e) {}
       try { if (this._processor) { this._processor.disconnect(); this._processor.onaudioprocess = null; } } catch (e) {}
       try { if (this._source) this._source.disconnect(); } catch (e) {}
-      try { if (this._audioCtx) this._audioCtx.close(); } catch (e) {}
-      try { if (this._media) this._media.getTracks().forEach((tr) => tr.stop()); } catch (e) {}
+      try { if (this._sink) this._sink.disconnect(); } catch (e) {}
+      try { if (this._audioCtx) await this._audioCtx.close(); } catch (e) {}
       this._processor = null;
       this._source = null;
+      this._sink = null;
       this._audioCtx = null;
       this._media = null;
+      await this._sleep(120); // let the OS fully release the mic before the next owner
     }
+
+    _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
     async release() {
       await this.pause();

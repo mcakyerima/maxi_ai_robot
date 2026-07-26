@@ -1004,6 +1004,13 @@
             // Choose the wake provider the backend selected (engine in /voice_config.js).
             pickWakeProvider() {
                 const cfg = window.MAXI_VOICE_CONFIG || {};
+                // Presentation safety switch (Settings → Voice & Wake Word). OFF = buttons only.
+                try {
+                    if (localStorage.getItem('maxi_wake_word') === 'off') {
+                        console.log('🎙️ Wake word disabled in Settings — buttons only.');
+                        return null;
+                    }
+                } catch (e) {}
                 try {
                     if (cfg.wakeEngine === 'porcupine' && typeof PorcupineWakeProvider !== 'undefined') {
                         return new PorcupineWakeProvider(cfg);

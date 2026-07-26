@@ -19,6 +19,14 @@ Both plug into the same `wakeProvider` slot in `maxi_voice_engine.js`:
 Force with `vosk` / `porcupine`; disable with `off`. Startup log shows the resolved
 engine. **Vosk needs no signup and gives the real "Hey Maxi" phrase — start here.**
 
+### 🔴 Presentation safety switch — turn wake word OFF from /settings
+Go to **/settings → Voice & Wake Word** and flip the toggle **OFF** to run **buttons
+only** (tap the mic). This is a per-device client preference (localStorage
+`maxi_wake_word`, read by /chat + /math) that needs no redeploy and doesn't depend on
+the backend — the reliable mode to fall back to if the wake word misbehaves during a
+demo. Default is ON. (Turning it OFF makes `pickWakeProvider()` return null → pure
+push-to-talk.)
+
 ---
 
 ## Vosk (no account — recommended right now)

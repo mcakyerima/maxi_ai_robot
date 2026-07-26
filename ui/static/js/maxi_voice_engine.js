@@ -264,10 +264,12 @@
       rec.lang = "en-US";
       rec.maxAlternatives = 1;
 
+      rec.onstart = () => { this._recStartAt = Date.now(); };
       rec.onresult = (event) => this._onResult(event);
       rec.onerror = (event) => {
-        if (event.error && event.error !== "no-speech" && event.error !== "aborted") {
-          this.onError(event.error);
+        this._lastRecError = (event && event.error) || "";
+        if (this._lastRecError && this._lastRecError !== "no-speech" && this._lastRecError !== "aborted") {
+          this.onError(this._lastRecError);
         }
       };
       rec.onend = () => {
@@ -281,7 +283,27 @@
             (this._continuous &&
               !this.usingProvider() &&
               (this.mode === "WAKE" || this.mode === "BARGE_IN")));
-        if (keepGoing) setTimeout(() => this._beginListen(), RESTART_DELAY_MS);
+        // Detect a TIGHT failure loop: the recognizer ended almost immediately with a
+        // mic-capture/permission error (e.g. the mic is still held elsewhere). Back
+        // off, and after a few give up instead of beeping forever.
+        const shortLived = this._recStartAt && Date.now() - this._recStartAt < 500;
+        const hardMic =
+          this._lastRecError === "audio-capture" ||
+          this._lastRecError === "not-allowed" ||
+          this._lastRecError === "service-not-allowed";
+        this._lastRecError = "";
+        if (shortLived && hardMic) this._captureFails = (this._captureFails || 0) + 1;
+        else this._captureFails = 0;
+        if (!keepGoing) return;
+        if (this._captureFails >= 5) {
+          this._captureFails = 0;
+          this.onError("mic-unavailable");
+          return; // stop the tight on/off beep loop
+        }
+        const delay = shortLived && hardMic
+          ? Math.min(1500, 300 * this._captureFails)
+          : RESTART_DELAY_MS;
+        setTimeout(() => this._beginListen(), delay);
       };
       this._recognition = rec;
     }

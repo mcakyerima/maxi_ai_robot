@@ -507,6 +507,31 @@
             color: var(--primary);
         }
 
+        /* Wake-word toggle switch */
+        .wake-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: rgba(0, 255, 204, 0.05);
+            border: 1px solid rgba(0, 255, 204, 0.2);
+            border-radius: 12px;
+            padding: 14px;
+        }
+        .switch { position: relative; display: inline-block; width: 64px; height: 34px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-toggle {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background: #3a3a5e; border: 2px solid var(--primary);
+            transition: .3s; border-radius: 34px;
+        }
+        .slider-toggle:before {
+            position: absolute; content: ""; height: 24px; width: 24px; left: 3px; bottom: 3px;
+            background: var(--primary); transition: .3s; border-radius: 50%;
+        }
+        .switch input:checked + .slider-toggle { background: rgba(0, 255, 204, 0.35); }
+        .switch input:checked + .slider-toggle:before { transform: translateX(30px); }
+
         /* Responsive */
         @media (max-width: 768px) {
             .container {
@@ -569,6 +594,24 @@
     <div class="container">
         <!-- Control Panel -->
         <div class="control-panel">
+            <!-- Voice & Wake Word -->
+            <div class="control-section">
+                <h3><i class="fas fa-microphone"></i> Voice &amp; Wake Word</h3>
+                <div class="wake-row">
+                    <div>
+                        <div style="font-weight:bold; color:var(--primary);">Hands-free “Hey Maxi”</div>
+                        <div style="font-size:12px; color:rgba(0,255,204,0.7); margin-top:4px;">
+                            Off = buttons only (tap the mic). Turn OFF if the wake word misbehaves.
+                        </div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="wakeToggle" onchange="onWakeToggle(this.checked)">
+                        <span class="slider-toggle"></span>
+                    </label>
+                </div>
+                <div id="wakeStatus" class="info-display" style="margin-top:8px;"></div>
+            </div>
+
             <!-- Arm Selection -->
             <div class="control-section">
                 <h3><i class="fas fa-hand"></i> Hand Selection</h3>
@@ -1278,6 +1321,31 @@
         document.addEventListener('gesturestart', (e) => {
             e.preventDefault();
         });
+
+        // --- Wake-word on/off (persisted in localStorage; read by /chat + /math) ---
+        // This is the presentation safety switch: OFF = buttons only, which is rock
+        // solid. It does NOT depend on the Pi/backend — pure client preference.
+        function setWakeStatusText(on) {
+            const el = document.getElementById('wakeStatus');
+            if (!el) return;
+            el.textContent = on
+                ? "Wake word ON — say “Hey Maxi”. Falls back to buttons if it can’t hear."
+                : "Wake word OFF — buttons only (tap the mic). Reliable for presentations.";
+        }
+        function onWakeToggle(on) {
+            try { localStorage.setItem('maxi_wake_word', on ? 'on' : 'off'); } catch (e) {}
+            setWakeStatusText(on);
+            updateStatus(on ? '✅ Wake word enabled' : '🔇 Wake word OFF (buttons only)', false);
+        }
+        function initWakeToggle() {
+            let v = 'on';
+            try { v = localStorage.getItem('maxi_wake_word') || 'on'; } catch (e) {}
+            const cb = document.getElementById('wakeToggle');
+            if (!cb) return;
+            cb.checked = (v !== 'off');
+            setWakeStatusText(cb.checked);
+        }
+        window.addEventListener('load', initWakeToggle);
 
         // Initialize system on page load
         window.addEventListener('load', init);
