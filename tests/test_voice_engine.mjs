@@ -37,6 +37,7 @@ function makeEngine(extra) {
         onWake: (t) => events.wake.push(t),
         onUtterance: (t) => events.utter.push(t),
         onInterrupt: (t) => events.interrupt.push(t),
+        postWakeCaptureDelayMs: 0, // keep tests fast; timing is covered separately
       },
       extra || {},
     ),

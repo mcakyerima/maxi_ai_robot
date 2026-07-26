@@ -99,16 +99,32 @@ _STOPWORDS: Set[str] = {
     "plus", "minus", "times", "equals", "divided", "answer", "question",
 }
 
+# ONLY explicit self-naming sets the name. We deliberately do NOT match a bare
+# "i am X" / "i'm X" — that caught casual speech like "i'm coming" and overwrote the
+# child's real name with "Coming". Explicit intros only.
 _NAME_PATTERNS = [
     re.compile(r"\bmy name(?:'s| is)\s+([a-z][a-z'\-]{1,20})", re.I),
     re.compile(
         r"\b(?:you can call me|they call me|please call me|call me|i am called|i'm called)\s+([a-z][a-z'\-]{1,20})",
         re.I,
     ),
-    # "i am amina" / "i'm amina" — gated hard by the blocklist so "i am happy"
-    # or "i am five" is never taken as a name.
-    re.compile(r"\bi(?:'m| am)\s+([a-z][a-z'\-]{1,20})\b", re.I),
 ]
+
+
+def _looks_like_name(word: str) -> bool:
+    """A conservative sanity check so ordinary words never get stored/recalled as a
+    name. Rejects blocklisted words and gerunds/verbs (anything ending in -ing:
+    coming, going, playing…), which are never names."""
+    w = (word or "").strip().lower()
+    if len(w) < 2 or len(w) > 20:
+        return False
+    if not re.fullmatch(r"[a-z][a-z'\-]*", w):
+        return False
+    if w in _NAME_BLOCKLIST:
+        return False
+    if w.endswith("ing"):
+        return False
+    return True
 
 _LIKE_PATTERNS = [
     re.compile(r"\bi (?:really |so |also )?(?:like|love|enjoy)d?\s+(.+)", re.I),
@@ -139,9 +155,8 @@ def _extract_name(text: str) -> Optional[str]:
         if not m:
             continue
         candidate = m.group(1).strip("-'").lower()
-        if not candidate or candidate in _NAME_BLOCKLIST:
-            continue
-        return candidate.capitalize()
+        if _looks_like_name(candidate):
+            return candidate.capitalize()
     return None
 
 
@@ -430,6 +445,11 @@ class PersistentMemory:
     # -- recall --------------------------------------------------------------
     def _recall_block(self) -> Optional[str]:
         name = self.store.get_name()
+        # Guard against a previously-stored bad name (e.g. "Coming" from old,
+        # over-eager extraction): never greet with something that isn't name-like.
+        if name and not _looks_like_name(name):
+            logger.info("ignoring implausible stored name %r", name)
+            name = None
         likes = self.store.get_facts("like", self.max_facts)
         dislikes = self.store.get_facts("dislike", self.max_facts)
         topics = self.store.get_topics(self.max_topics)

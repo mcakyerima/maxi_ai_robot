@@ -44,6 +44,10 @@
   const MIN_CONFIDENCE = 0.5;
   const SCRIPT_MEMORY = 6;
   const RESTART_DELAY_MS = 350;
+  // After a wake word, wait a beat before opening the question mic: lets the wake
+  // audio finish and the on-device model release the mic, so the child's first
+  // words aren't clipped. The mic BEEP is the "go ahead and talk" cue.
+  const POST_WAKE_CAPTURE_DELAY_MS = 600;
 
   const hasWindow = typeof window !== "undefined";
 
@@ -86,6 +90,10 @@
 
       this.mode = "OFF";
       this._modeSeq = 0; // guards async mode transitions against supersession
+      this._wakePending = false; // a wake just fired → settle before capturing
+      this._postWakeDelayMs = typeof opts.postWakeCaptureDelayMs === "number"
+        ? opts.postWakeCaptureDelayMs
+        : POST_WAKE_CAPTURE_DELAY_MS;
       this._recognition = null;
       this._wantRunning = false;
       this._listening = false;
@@ -166,6 +174,9 @@
 
     async _applyModeAsync(seq) {
       const mode = this.mode;
+      // A pending post-wake settle only applies to the capture that immediately
+      // follows a wake word; clear it for any other transition (e.g. a mic tap).
+      if (mode !== "CAPTURE") this._wakePending = false;
       const provider = this.usingProvider();
       // A provider may not be safe for barge-in (e.g. Vosk mis-hears Maxi's own
       // voice). Such providers power WAKE only; the mic is OFF while Maxi speaks.
@@ -178,6 +189,15 @@
           try { await this._wakeProvider.pause(); } catch (e) { /* ignore */ }
         }
         if (seq !== this._modeSeq) return; // superseded by a newer mode
+        // If this capture follows a wake word, give the model a beat to settle and
+        // let the wake audio end before we start listening (and beep).
+        if (this._wakePending) {
+          this._wakePending = false;
+          if (this._postWakeDelayMs > 0) {
+            await this._sleep(this._postWakeDelayMs);
+            if (seq !== this._modeSeq) return;
+          }
+        }
         this._beginListen();
       } else if (mode === "WAKE" || (mode === "BARGE_IN" && bargeOk)) {
         // Beepless listening via the provider; webkitSpeechRecognition stays off.
@@ -208,6 +228,8 @@
       Promise.resolve().then(() => p.release()).catch(() => {});
     }
 
+    _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
     // A wake-word hit from the on-device model. Route it by the current mode:
     // idle → wake Maxi; speaking → barge-in (echo-safe: Maxi never says its own
     // wake word). Ignored otherwise.
@@ -215,6 +237,7 @@
       const now = Date.now();
       this._lastHeard = "[wake:" + (label || "?") + "]";
       if (this.mode === "WAKE") {
+        this._wakePending = true; // settle before the following capture
         this._decide("WAKE (provider: " + label + ")");
         this.onWake(label || "");
       } else if (this.mode === "BARGE_IN") {

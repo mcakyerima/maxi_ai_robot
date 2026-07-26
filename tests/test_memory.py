@@ -60,10 +60,16 @@ class FakeLLM:
 def test_extractors():
     print("extractors (pure functions, deterministic):")
     check("my name is Amina", _extract_name("my name is Amina") == "Amina")
-    check("i'm Musa", _extract_name("hi, i'm musa") == "Musa")
+    check("my name's Musa", _extract_name("hi, my name's musa") == "Musa")
+    # Explicit-only: a bare "i'm musa" is NOT taken as a name (prevents the 'Coming' bug).
+    check("bare \"i'm musa\" is NOT a name (explicit-only)", _extract_name("hi, i'm musa") is None)
     check("call me Zainab", _extract_name("you can call me zainab") == "Zainab")
     check("'i am happy' is NOT a name", _extract_name("i am happy today") is None)
     check("'i am five' is NOT a name", _extract_name("i am five years old") is None)
+    # Regression: casual speech must NOT become the name (the "Coming" bug).
+    check("'i'm coming' is NOT a name", _extract_name("i'm coming") is None)
+    check("'i am coming' is NOT a name", _extract_name("i am coming now") is None)
+    check("gerund rejected even if explicit", _extract_name("my name is running") is None)
 
     likes = _extract_likes("i really like football and my sister")
     check("likes football (cut at 'and')", likes == ["football"])
@@ -142,6 +148,25 @@ async def test_summary_with_fake_llm():
     mem_nollm.store.close()
 
 
+async def test_bad_stored_name_ignored_on_recall():
+    print("\nbad stored name is dropped on recall (the 'Coming' bug):")
+    tmp = tempfile.mkdtemp(prefix="maxi_mem_")
+    mem = newmem(os.path.join(tmp, "mem.db"))
+    # Simulate an old, corrupted name already on disk.
+    mem.store.set_name("Coming")
+    mem.store.add_fact("like", "football")
+    msgs = await mem.context()
+    recall = next((m["content"] for m in msgs if "met before" in m["content"]), "")
+    check("recall does NOT greet with 'Coming'", "Coming" not in recall and "coming" not in recall.lower())
+    check("other memories still recalled", "football" in recall)
+    # A real explicit intro overwrites it.
+    await mem.add_user("my name is Fatima")
+    recall2 = next((m["content"] for m in (await mem.context())), "")
+    all2 = " ".join(m["content"] for m in await mem.context())
+    check("explicit 'my name is Fatima' takes over", "Fatima" in all2)
+    mem.store.close()
+
+
 async def test_learning_never_crashes():
     print("\nrobustness:")
     tmp = tempfile.mkdtemp(prefix="maxi_mem_")
@@ -156,6 +181,7 @@ async def main():
     test_extractors()
     await test_persistence_and_recall()
     await test_summary_with_fake_llm()
+    await test_bad_stored_name_ignored_on_recall()
     await test_learning_never_crashes()
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
