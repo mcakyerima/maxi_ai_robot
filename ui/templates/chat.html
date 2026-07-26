@@ -995,9 +995,10 @@
 
     <!-- Maxi Voice Engine: wake word + self-echo-safe barge-in -->
     <script src="/static/js/maxi_voice_engine.js"></script>
-    <!-- Beepless hands-free wake word (Porcupine Web). Config + provider. -->
+    <!-- Beepless hands-free wake word. Config + providers (Porcupine / Vosk). -->
     <script src="/voice_config.js"></script>
     <script src="/static/js/porcupine_wake.js"></script>
+    <script src="/static/js/vosk_wake.js"></script>
 
     <!-- Main Application Script -->
     <script>
@@ -1097,18 +1098,10 @@
               start() {}, stop() {}, isSupported: () => false,
             };
           }
-          // Beepless hands-free wake word (progressive enhancement). Built only if a
-          // Picovoice AccessKey is configured; otherwise null → engine uses
-          // push-to-talk. init() is async and kicked off in initVoiceProvider().
-          this._wakeProvider = null;
-          const cfg = window.MAXI_VOICE_CONFIG || {};
-          if (cfg.wakeEnabled && typeof PorcupineWakeProvider !== "undefined") {
-            try {
-              this._wakeProvider = new PorcupineWakeProvider(cfg);
-            } catch (e) {
-              console.warn("Could not create wake provider:", e);
-            }
-          }
+          // Beepless hands-free wake word (progressive enhancement). The backend
+          // picks the engine (porcupine | vosk | none); null → push-to-talk.
+          // init() is async and kicked off in initVoiceProvider().
+          this._wakeProvider = this.pickWakeProvider();
           return new MaxiVoiceEngine({
             wakeProvider: this._wakeProvider,
             onWake: () => this.handleVoiceWake(),
@@ -1119,6 +1112,22 @@
             },
             onError: (e) => console.warn("Voice engine:", e),
           });
+        }
+
+        // Choose the wake provider the backend selected (engine set in /voice_config.js).
+        pickWakeProvider() {
+          const cfg = window.MAXI_VOICE_CONFIG || {};
+          try {
+            if (cfg.wakeEngine === "porcupine" && typeof PorcupineWakeProvider !== "undefined") {
+              return new PorcupineWakeProvider(cfg);
+            }
+            if (cfg.wakeEngine === "vosk" && typeof VoskWakeProvider !== "undefined") {
+              return new VoskWakeProvider(cfg);
+            }
+          } catch (e) {
+            console.warn("Could not create wake provider:", e);
+          }
+          return null;
         }
 
         // Load the on-device wake-word model, then re-apply the current mode so an

@@ -50,10 +50,11 @@ Set these in Railway → service → Variables:
 - `RASPBERRY_PI_URL=https://<pi-tunnel>` (+ `MAXI_HAND_API_KEY`) — only if you want the
   physical hands from the cloud (Railway can't reach a LAN IP). Else hands run in sim.
 - `PORT` is set by Railway automatically.
-- **Hands-free wake word (optional):** `PICOVOICE_ACCESS_KEY` enables beepless "Hey
-  Maxi" on the tablet (get a free key at console.picovoice.ai). `PICOVOICE_KEYWORD`
-  (default `Computer`) picks a built-in keyword; custom "Hey Maxi" via
-  `PICOVOICE_KEYWORD_URL`. No key → tablet uses push-to-talk. **Full guide: `docs/WAKEWORD.md`.**
+- **Hands-free wake word (two engines, `MAXI_WAKE_ENGINE=auto`):** **Vosk** (no account,
+  real "Hey Maxi") or **Porcupine** (needs a Picovoice key — now sales-gated). `auto` =
+  Porcupine if `PICOVOICE_ACCESS_KEY` set, else **Vosk**. Vosk's ~40 MB model is served
+  from the Railway volume (`/data/models`, auto-downloaded once on boot). No engine
+  ready → push-to-talk. **Full guide: `docs/WAKEWORD.md`.**
 - **Long-term memory (optional, sensible defaults):** `MAXI_MEMORY_ENABLED` (default on),
   `MAXI_MEMORY_DB` (default `<repo>/data/maxi_memory.db`), `MAXI_CHILD_ID` (default
   `default`), `MAXI_MEMORY_SUMMARIZE_EVERY` (default 6). ⚠️ **Railway's default
@@ -221,6 +222,11 @@ live-testable once a (free) Picovoice AccessKey is set.
 - Default keyword is a **built-in "Computer"** (works with just an AccessKey, no
   training). Custom "Hey Maxi" = train a WASM `.ppn` on the Picovoice console, set
   `PICOVOICE_KEYWORD_URL` (see WAKEWORD.md §3).
+- **Update (Picovoice went sales-gated):** added a second engine **Vosk** (`vosk_wake.js`,
+  no account, real "Hey Maxi", ~40 MB model served from the Railway volume via a boot-time
+  one-time download + `/models/` route). `MAXI_WAKE_ENGINE=auto` picks Porcupine if a key
+  exists, else Vosk. Both share the SAME `wakeProvider` slot — flip with one env var.
+  This is the path to use NOW (no signup). See `docs/WAKEWORD.md`.
 - **Verified:** `node tests/test_voice_engine.mjs` → **15/15** (7 original + 8 new:
   beepless WAKE, CAPTURE mic hand-off, provider barge-in, onset-deafness, not-ready
   fallback, reapplyMode, no-provider unchanged). Page JS syntax-checked; `/voice_config.js`

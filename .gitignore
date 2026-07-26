@@ -29,8 +29,11 @@ shutdown_logs/
 # Cache
 intent_cache/
 
-# Large model files (too big for git)
+# Large model files (too big for git) — served from the Railway volume, not committed
 vosk-model-*/
+vosk-model-*
+*.tar.gz
+data/models/
 ollama_models/
 piper/
 *.ppn

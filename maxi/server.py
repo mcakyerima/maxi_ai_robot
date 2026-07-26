@@ -27,6 +27,7 @@ from maxi.core.events import Mode
 from maxi.core.transport import Transport
 from maxi.factory import build_orchestrator
 from maxi.services import memory as memory_service
+from maxi.services import models as model_service
 
 # UTF-8 stdout so emoji logs don't crash on Windows consoles.
 try:
@@ -131,22 +132,42 @@ def service_worker():
     return resp
 
 
+@app.route("/models/<path:filename>")
+def serve_model(filename: str):
+    """Serve big ML assets (the Vosk model) from Maxi's drive (the Railway volume),
+    same-origin so the browser worker has no CORS issue. 404 until the one-time
+    boot download finishes."""
+    resp = make_response(send_from_directory(model_service.model_dir(), filename))
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
 @app.route("/voice_config.js")
 def voice_config_js():
     """Serve the tablet's wake-word config as a JS global (window.MAXI_VOICE_CONFIG).
 
     Kept out of the templates so the Picovoice AccessKey is injected at runtime from
-    the environment, never committed. Absent key → hands-free stays off (fallback)."""
+    the environment, never committed. `wakeEngine` tells the page which provider to
+    build: 'porcupine' | 'vosk' | 'none' (→ push-to-talk)."""
     v = settings.voice
+    engine = v.resolved_wake_engine
+    if engine == "vosk" and not model_service.vosk_model_ready():
+        # Model still downloading on first boot — page falls back until it's ready.
+        engine = "none"
     cfg: Dict[str, Any] = {
-        "wakeEnabled": v.wake_enabled,
+        "wakeEngine": engine,
+        "wakeEnabled": engine != "none",
+        # Porcupine
         "picovoiceAccessKey": v.picovoice_access_key,
         "keyword": v.keyword,
         "sensitivity": v.sensitivity,
         "keywordUrl": v.keyword_url,
         "keywordLabel": v.keyword_label,
+        # Vosk
+        "voskSdkUrl": v.vosk_sdk_url,
+        "voskModelUrl": "/models/" + v.vosk_model_file,
+        "wakePhrase": v.wake_phrase,
     }
-    # Only include CDN overrides when explicitly set (else the provider defaults win).
     if v.model_url:
         cfg["modelUrl"] = v.model_url
     if v.sdk_porcupine_url:
@@ -189,11 +210,10 @@ def on_message(data: Dict[str, Any]):
 def main() -> None:
     logger.info("🚀🚀 MAXI BUILD MARKER: math-v2-stepbystep + kid-friendly word problems 🚀🚀")
     logger.info("🧠 %s", memory_service.describe_config())
-    if settings.voice.wake_enabled:
-        kw = settings.voice.keyword_label if settings.voice.keyword_url else settings.voice.keyword
-        logger.info("🎙️ hands-free wake word ON (say '%s') — beepless on-device model on the tablet", kw)
-    else:
-        logger.info("🎙️ hands-free wake word OFF (no PICOVOICE_ACCESS_KEY) — tablet uses push-to-talk")
+    # Wake word: seed the Vosk model to the volume once if that engine is selected.
+    if settings.voice.resolved_wake_engine == "vosk":
+        model_service.ensure_vosk_model_async()
+    logger.info("🎙️ %s", model_service.describe())
     start_brain_thread()
     logger.info("Maxi v2 serving on http://%s:%s", settings.server.host, settings.server.port)
 

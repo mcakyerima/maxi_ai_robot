@@ -135,9 +135,38 @@ class VoiceSettings:
     sdk_porcupine_url: str = field(default_factory=lambda: _get("PICOVOICE_SDK_PORCUPINE_URL", ""))
     sdk_vp_url: str = field(default_factory=lambda: _get("PICOVOICE_SDK_VP_URL", ""))
 
+    # --- Engine selection + Vosk (no-account fallback) ---
+    # auto → Porcupine if a Picovoice key is set, else Vosk. Also: vosk | porcupine | off.
+    wake_engine: str = field(default_factory=lambda: _get("MAXI_WAKE_ENGINE", "auto").strip().lower())
+    wake_phrase: str = field(default_factory=lambda: _get("MAXI_WAKE_PHRASE", "hey maxi").strip().lower())
+    # Vosk: a small offline STT model (~40 MB) served from Maxi's own drive (the
+    # Railway volume). Seeded once from source, then served same-origin — no runtime CDN.
+    # Where big assets live. Empty → Railway volume /models if mounted, else <repo>/data/models.
+    model_dir: str = field(default_factory=lambda: _get("MAXI_MODEL_DIR", ""))
+    vosk_model_file: str = field(default_factory=lambda: _get("MAXI_VOSK_MODEL_FILE", "vosk-model-small-en-us-0.15.tar.gz"))
+    vosk_model_source: str = field(default_factory=lambda: _get(
+        "MAXI_VOSK_MODEL_SOURCE",
+        "https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz"))
+    vosk_sdk_url: str = field(default_factory=lambda: _get(
+        "MAXI_VOSK_SDK_URL", "https://cdn.jsdelivr.net/npm/vosk-browser@0.0.5/dist/vosk.js"))
+
     @property
     def wake_enabled(self) -> bool:
+        """True if the beepless Porcupine path is configured (has an AccessKey)."""
         return bool(self.picovoice_access_key)
+
+    @property
+    def resolved_wake_engine(self) -> str:
+        """Which wake engine the tablet should actually use: porcupine | vosk | none."""
+        eng = self.wake_engine
+        if eng == "off":
+            return "none"
+        if eng == "porcupine":
+            return "porcupine" if self.wake_enabled else "none"
+        if eng == "vosk":
+            return "vosk"
+        # auto: prefer Porcupine when a key exists, else fall back to Vosk (no account).
+        return "porcupine" if self.wake_enabled else "vosk"
 
 
 @dataclass(frozen=True)
