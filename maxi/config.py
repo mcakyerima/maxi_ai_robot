@@ -116,6 +116,31 @@ class IntegrationsSettings:
 
 
 @dataclass(frozen=True)
+class VoiceSettings:
+    """Hands-free wake word on the tablet (Picovoice Porcupine Web, beepless).
+
+    Served to the PWA via /voice_config.js. With no AccessKey the tablet silently
+    falls back to push-to-talk — hands-free is a progressive enhancement."""
+    picovoice_access_key: str = field(default_factory=lambda: _get("PICOVOICE_ACCESS_KEY", ""))
+    # A built-in keyword ("Computer", "Jarvis", "Bumblebee", "Hey Google", …) works
+    # with just an AccessKey (no training). Swap to a custom "Hey Maxi" via _url below.
+    keyword: str = field(default_factory=lambda: _get("PICOVOICE_KEYWORD", "Computer"))
+    sensitivity: float = field(default_factory=lambda: _get_float("PICOVOICE_SENSITIVITY", 0.6))
+    # Optional trained "Hey Maxi" .ppn (Web/WASM platform). A full URL, or a path
+    # served under /static (e.g. /static/wake/hey-maxi_wasm.ppn).
+    keyword_url: str = field(default_factory=lambda: _get("PICOVOICE_KEYWORD_URL", ""))
+    keyword_label: str = field(default_factory=lambda: _get("PICOVOICE_KEYWORD_LABEL", "Hey Maxi"))
+    # CDN overrides (pin/vendor for robustness). Empty → provider defaults.
+    model_url: str = field(default_factory=lambda: _get("PICOVOICE_MODEL_URL", ""))
+    sdk_porcupine_url: str = field(default_factory=lambda: _get("PICOVOICE_SDK_PORCUPINE_URL", ""))
+    sdk_vp_url: str = field(default_factory=lambda: _get("PICOVOICE_SDK_VP_URL", ""))
+
+    @property
+    def wake_enabled(self) -> bool:
+        return bool(self.picovoice_access_key)
+
+
+@dataclass(frozen=True)
 class MemorySettings:
     """Lightweight long-term memory: a SQLite store of the child's facts + a
     rolling conversation summary. Zero heavy deps (stdlib ``sqlite3`` only) — the
@@ -144,6 +169,7 @@ class Settings:
     safety: SafetySettings = field(default_factory=SafetySettings)
     integrations: IntegrationsSettings = field(default_factory=IntegrationsSettings)
     memory: MemorySettings = field(default_factory=MemorySettings)
+    voice: VoiceSettings = field(default_factory=VoiceSettings)
 
     # Persona / location context used by the tutoring system prompt.
     persona_name: str = field(default_factory=lambda: _get("MAXI_NAME", "Maxi"))

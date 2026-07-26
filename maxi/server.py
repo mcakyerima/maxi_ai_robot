@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import signal
 import sys
@@ -130,6 +131,35 @@ def service_worker():
     return resp
 
 
+@app.route("/voice_config.js")
+def voice_config_js():
+    """Serve the tablet's wake-word config as a JS global (window.MAXI_VOICE_CONFIG).
+
+    Kept out of the templates so the Picovoice AccessKey is injected at runtime from
+    the environment, never committed. Absent key → hands-free stays off (fallback)."""
+    v = settings.voice
+    cfg: Dict[str, Any] = {
+        "wakeEnabled": v.wake_enabled,
+        "picovoiceAccessKey": v.picovoice_access_key,
+        "keyword": v.keyword,
+        "sensitivity": v.sensitivity,
+        "keywordUrl": v.keyword_url,
+        "keywordLabel": v.keyword_label,
+    }
+    # Only include CDN overrides when explicitly set (else the provider defaults win).
+    if v.model_url:
+        cfg["modelUrl"] = v.model_url
+    if v.sdk_porcupine_url:
+        cfg["sdkPorcupineUrl"] = v.sdk_porcupine_url
+    if v.sdk_vp_url:
+        cfg["sdkVpUrl"] = v.sdk_vp_url
+    body = "window.MAXI_VOICE_CONFIG = " + json.dumps(cfg) + ";"
+    resp = make_response(body)
+    resp.headers["Content-Type"] = "application/javascript; charset=utf-8"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 @app.route("/set_mode/<mode>")
 def set_mode(mode: str):
     wire = {"general": "general_chat", "math": "math_gesture", "idle": "idle"}.get(mode)
@@ -159,6 +189,11 @@ def on_message(data: Dict[str, Any]):
 def main() -> None:
     logger.info("🚀🚀 MAXI BUILD MARKER: math-v2-stepbystep + kid-friendly word problems 🚀🚀")
     logger.info("🧠 %s", memory_service.describe_config())
+    if settings.voice.wake_enabled:
+        kw = settings.voice.keyword_label if settings.voice.keyword_url else settings.voice.keyword
+        logger.info("🎙️ hands-free wake word ON (say '%s') — beepless on-device model on the tablet", kw)
+    else:
+        logger.info("🎙️ hands-free wake word OFF (no PICOVOICE_ACCESS_KEY) — tablet uses push-to-talk")
     start_brain_thread()
     logger.info("Maxi v2 serving on http://%s:%s", settings.server.host, settings.server.port)
 

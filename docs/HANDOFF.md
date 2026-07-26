@@ -50,6 +50,10 @@ Set these in Railway → service → Variables:
 - `RASPBERRY_PI_URL=https://<pi-tunnel>` (+ `MAXI_HAND_API_KEY`) — only if you want the
   physical hands from the cloud (Railway can't reach a LAN IP). Else hands run in sim.
 - `PORT` is set by Railway automatically.
+- **Hands-free wake word (optional):** `PICOVOICE_ACCESS_KEY` enables beepless "Hey
+  Maxi" on the tablet (get a free key at console.picovoice.ai). `PICOVOICE_KEYWORD`
+  (default `Computer`) picks a built-in keyword; custom "Hey Maxi" via
+  `PICOVOICE_KEYWORD_URL`. No key → tablet uses push-to-talk. **Full guide: `docs/WAKEWORD.md`.**
 - **Long-term memory (optional, sensible defaults):** `MAXI_MEMORY_ENABLED` (default on),
   `MAXI_MEMORY_DB` (default `<repo>/data/maxi_memory.db`), `MAXI_CHILD_ID` (default
   `default`), `MAXI_MEMORY_SUMMARIZE_EVERY` (default 6). ⚠️ **Railway's default
@@ -89,8 +93,10 @@ Reused legacy kept: `brain/safety/`, `brain/context_manager/` (for future memory
 `hardware/` (Pi code — UNCHANGED, runs on the Pi). All other legacy was deleted.
 
 Tablet: `ui/templates/{chat,math,menu,settings}.html`,
-`ui/static/js/maxi_voice_engine.js` (the wake-word/barge-in engine),
+`ui/static/js/maxi_voice_engine.js` (wake-word/barge-in engine; pluggable `wakeProvider`),
+`ui/static/js/porcupine_wake.js` (beepless on-device wake word — Porcupine Web),
 `ui/static/js/audio_player.js`, `ui/sw.js` (network-first service worker).
+Wake-word config served at runtime by `/voice_config.js` (from `settings.voice`).
 
 ---
 
@@ -195,13 +201,43 @@ Lightweight, deployable, no heavy deps (stdlib `sqlite3` only — the embedding
 
 ---
 
+## 9c. Just built (this session): hands-free "Hey Maxi" — beepless wake word
+Full guide: **`docs/WAKEWORD.md`**. Buildable + unit-tested with no hardware/account;
+live-testable once a (free) Picovoice AccessKey is set.
+- **Key insight:** the Android beep storm is ONLY the idle WAKE stage. So an on-device
+  wake model (Porcupine Web / WASM over `getUserMedia`, no `webkitSpeechRecognition`)
+  owns WAKE + speaking BARGE_IN (beepless); `webkitSpeechRecognition` is used ONLY to
+  capture the one question (one acceptable beep, like Google Assistant).
+- **`maxi_voice_engine.js`** gained a pluggable **`wakeProvider`**. Ready provider →
+  beepless WAKE/BARGE_IN; CAPTURE pauses the provider's mic (so the two don't fight
+  over the microphone) then resumes. Barge-in via the wake word is echo-safe (Maxi
+  never says its own wake word). NON-provider behavior is byte-identical to before.
+- **`porcupine_wake.js`** = `PorcupineWakeProvider`: CDN-loads the Porcupine Web SDK,
+  runs it via WebVoiceProcessor. **Fully defensive** — no key / CDN fail / insecure
+  context → `isReady()` false → engine falls back to push-to-talk. Progressive
+  enhancement, never a hard dep.
+- **Config** `settings.voice` (`VoiceSettings`) served at runtime via `/voice_config.js`
+  so the **AccessKey is never committed**. Startup log: `🎙️ hands-free wake word ON/OFF`.
+- Default keyword is a **built-in "Computer"** (works with just an AccessKey, no
+  training). Custom "Hey Maxi" = train a WASM `.ppn` on the Picovoice console, set
+  `PICOVOICE_KEYWORD_URL` (see WAKEWORD.md §3).
+- **Verified:** `node tests/test_voice_engine.mjs` → **15/15** (7 original + 8 new:
+  beepless WAKE, CAPTURE mic hand-off, provider barge-in, onset-deafness, not-ready
+  fallback, reapplyMode, no-provider unchanged). Page JS syntax-checked; `/voice_config.js`
+  renders; existing python tests still pass.
+- **To go live:** set `PICOVOICE_ACCESS_KEY` on Railway → open `/chat` over https → say
+  "Computer" (no beep) → ask → answer. `?maxidebug=1` HUD shows `hands-free (wake-model)`.
+
+---
+
 ## 10. Roadmap (priority order) — pick up here
 **Tier 1 — finish/validate**
 1. ✅ Step-by-step math (just done — verify on device).
 2. **Real hardware test pass** (Pi hands + tablet mic) and tune thresholds. BIGGEST gap.
-3. **True hands-free "Hey Maxi"** without beeps → integrate an on-device wake-word model
-   (openWakeWord ONNX/WASM, or Porcupine Web) over getUserMedia. Slots into the voice
-   engine's mode interface. Highest-impact UX upgrade.
+3. ✅ **True hands-free "Hey Maxi" (beepless)** — DONE this session via a pluggable
+   `wakeProvider` + Porcupine Web (`porcupine_wake.js`). See §9c + `docs/WAKEWORD.md`.
+   Remaining polish: train the custom "Hey Maxi" WASM `.ppn` (built-in "Computer" for
+   now); optionally vendor the SDK/model for CDN-independence.
 
 **Tier 2 — robustness**
 4. Proper realtime server (gunicorn + eventlet/gevent) → real WebSockets, lower latency.
@@ -225,6 +261,7 @@ Lightweight, deployable, no heavy deps (stdlib `sqlite3` only — the embedding
 ---
 
 ## 11. Recent commit trail (newest first)
+- (this session) hands-free "Hey Maxi": beepless on-device wake word (Porcupine Web) + pluggable wakeProvider
 - (this session) long-term memory: PersistentMemory (SQLite facts/topics + rolling summary)
 - `230a415` fix word problems misrouted to local solver ("and"→"+"; now LLM path, answer correct)
 - `b7d923a` build marker + math diagnostic logs

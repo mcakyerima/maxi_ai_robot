@@ -10,17 +10,25 @@
  * single question after the child taps the mic (or Maxi enters LISTENING). That
  * gives one beep-in / one beep-out per question, like Google Assistant.
  *
- * Hands-free "Hey Maxi" + voice "stop" barge-in need continuous listening, which
- * beeps on this platform. Enable it deliberately with { continuous: true } or by
- * adding ?wake=1 to the URL. The real no-beep solution is a dedicated on-device
- * wake-word model (Porcupine / openWakeWord over getUserMedia) — see docs/BARGE_IN.md.
+ * Hands-free "Hey Maxi" + voice "stop" barge-in via webkitSpeechRecognition need
+ * continuous listening, which beeps on this platform. Enable that (beepy) fallback
+ * deliberately with { continuous: true } or ?wake=1.
+ *
+ * THE REAL no-beep hands-free path: pass a `wakeProvider` (an on-device wake-word
+ * model over getUserMedia — see porcupine_wake.js). When a ready provider is
+ * present, the idle WAKE stage and speaking BARGE_IN stage are handled by the
+ * provider (NO webkitSpeechRecognition, so NO beep), and webkitSpeechRecognition is
+ * used ONLY to capture the actual question in CAPTURE — one beep per question, like
+ * Google Assistant. The provider's mic is released during CAPTURE so the two don't
+ * fight over the microphone, then re-acquired afterwards.
  *
  * Modes (set by the page from Maxi's state):
- *   OFF      — mic off
- *   WAKE     — idle. push-to-talk: mic OFF (silent). continuous: listen for wake words.
- *   CAPTURE  — listen for ONE question → onUtterance()
- *   BARGE_IN — Maxi speaking. push-to-talk: mic OFF (use the mic button to interrupt).
- *              continuous: listen for barge-in words, echo-filtered → onInterrupt().
+ *   OFF      — mic off (provider released)
+ *   WAKE     — idle. provider: beepless wake detection. else push-to-talk (mic OFF)
+ *              or continuous (beepy) if enabled.
+ *   CAPTURE  — listen for ONE question → onUtterance() (provider paused)
+ *   BARGE_IN — Maxi speaking. provider: beepless wake-word interrupt. else
+ *              push-to-talk (mic OFF) or continuous barge-in words → onInterrupt().
  */
 (function (global) {
   "use strict";
@@ -59,6 +67,14 @@
       this.onInterim = opts.onInterim || function () {};
       this.onModeChange = opts.onModeChange || function () {};
       this.onError = opts.onError || function () {};
+
+      // Optional on-device wake-word provider (beepless hands-free). When present
+      // and ready(), it powers the WAKE + BARGE_IN stages over getUserMedia; its
+      // keyword hits are routed here by mode. See porcupine_wake.js.
+      this._wakeProvider = opts.wakeProvider || null;
+      if (this._wakeProvider) {
+        this._wakeProvider.onKeyword = (label) => this._onProviderDetect(label);
+      }
 
       // Continuous (hands-free, beepy) listening is OFF by default. Opt in with
       // { continuous:true } or ?wake=1 on the URL.
@@ -111,11 +127,22 @@
       this._wantRunning = false;
       this._setMode("OFF");
       this._endListen();
+      this._providerRelease();
     }
 
     setMode(mode) {
       this._setMode(mode);
       this._applyMode();
+    }
+
+    // Re-apply the current mode. Call after the wake provider finishes its async
+    // init() so an already-idle engine switches from beepy fallback to beepless.
+    reapplyMode() {
+      this._applyMode();
+    }
+
+    usingProvider() {
+      return !!(this._wakeProvider && this._wakeProvider.isReady && this._wakeProvider.isReady());
     }
 
     _setMode(mode) {
@@ -128,14 +155,74 @@
     // Turn the mic on/off to match the current mode.
     _applyMode() {
       if (!this._wantRunning) return;
+      const provider = this.usingProvider();
       if (this.mode === "CAPTURE") {
+        // The question is captured by webkitSpeechRecognition. Release the
+        // provider's mic first so the two don't fight over the microphone.
+        if (provider) this._providerPause();
         this._beginListen();
       } else if (this.mode === "WAKE" || this.mode === "BARGE_IN") {
-        if (this._continuous) this._beginListen();
-        else this._endListen(); // push-to-talk: silent while idle / speaking
+        if (provider) {
+          // Beepless: the on-device model listens; webkitSpeechRecognition stays off.
+          this._endListen();
+          this._providerListen();
+        } else if (this._continuous) {
+          this._beginListen();
+        } else {
+          this._endListen(); // push-to-talk: silent while idle / speaking
+        }
       } else {
         this._endListen();
+        if (provider) this._providerPause();
       }
+    }
+
+    // -- wake provider control (async, fire-and-forget with internal guards) ---
+    _providerListen() {
+      const p = this._wakeProvider;
+      if (!p || !p.isReady || !p.isReady()) return;
+      Promise.resolve()
+        .then(() => p.listen())
+        .catch((e) => this.onError("wake-provider-listen: " + (e && e.message || e)));
+    }
+    _providerPause() {
+      const p = this._wakeProvider;
+      if (!p || !p.pause) return;
+      Promise.resolve()
+        .then(() => p.pause())
+        .catch(() => {});
+    }
+    _providerRelease() {
+      const p = this._wakeProvider;
+      if (!p || !p.release) return;
+      Promise.resolve()
+        .then(() => p.release())
+        .catch(() => {});
+    }
+
+    // A wake-word hit from the on-device model. Route it by the current mode:
+    // idle → wake Maxi; speaking → barge-in (echo-safe: Maxi never says its own
+    // wake word). Ignored otherwise.
+    _onProviderDetect(label) {
+      const now = Date.now();
+      this._lastHeard = "[wake:" + (label || "?") + "]";
+      if (this.mode === "WAKE") {
+        this._decide("WAKE (provider: " + label + ")");
+        this.onWake(label || "");
+      } else if (this.mode === "BARGE_IN") {
+        if (this._speakingSince && now - this._speakingSince < ONSET_DEAF_MS) {
+          return this._decide("ignored: onset-deafness");
+        }
+        if (now - this._lastBargeAt < COOLDOWN_MS) {
+          return this._decide("ignored: cooldown");
+        }
+        this._lastBargeAt = now;
+        this._decide("BARGE-IN (provider: " + label + ")");
+        this.onInterrupt(label || "");
+      } else {
+        this._decide("ignored provider hit in mode " + this.mode);
+      }
+      this._hud();
     }
 
     setScript(text) {
@@ -173,11 +260,14 @@
       rec.onend = () => {
         this._listening = false;
         // Re-listen ONLY while capturing a question, or for continuous wake/barge-in.
-        // Never restart in idle push-to-talk mode — that is the beep storm.
+        // Never restart in idle push-to-talk mode — that is the beep storm. And when
+        // an on-device wake provider owns WAKE/BARGE_IN, never restart there either.
         const keepGoing =
           this._wantRunning &&
           (this.mode === "CAPTURE" ||
-            (this._continuous && (this.mode === "WAKE" || this.mode === "BARGE_IN")));
+            (this._continuous &&
+              !this.usingProvider() &&
+              (this.mode === "WAKE" || this.mode === "BARGE_IN")));
         if (keepGoing) setTimeout(() => this._beginListen(), RESTART_DELAY_MS);
       };
       this._recognition = rec;
@@ -321,8 +411,13 @@
     }
     _hud() {
       if (!this._hudEl) return;
+      const modeLabel = this.usingProvider()
+        ? "hands-free (wake-model)"
+        : this._continuous
+          ? "hands-free (beepy)"
+          : "tap-to-talk";
       this._hudEl.textContent =
-        "🎙 Maxi voice (" + (this._continuous ? "hands-free" : "tap-to-talk") + ")\n" +
+        "🎙 Maxi voice (" + modeLabel + ")\n" +
         "mode:     " + this.mode + (this._listening ? " (mic on)" : " (mic off)") + "\n" +
         "heard:    " + (this._lastHeard || "—") + "\n" +
         "script:   " + (this._recentScripts.slice(-1)[0] || "—") + "\n" +
