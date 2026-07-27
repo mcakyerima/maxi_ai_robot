@@ -57,20 +57,32 @@ LETTER_SOUNDS = {
 
 
 def spell_sounds(word: str) -> str:
-    """The word spelled as clearly-pronounced letter sounds, comma-separated."""
-    return ", ".join(LETTER_SOUNDS.get(ch, ch) for ch in word.lower() if ch.isalpha())
+    """Letter sounds for SPEECH. A '!' after each makes the TTS pause between
+    letters (edge-tts treats ! as a sentence break) so it doesn't rush them."""
+    return " ".join(LETTER_SOUNDS.get(ch, ch) + "!" for ch in word.lower() if ch.isalpha())
 
 
-def spell_word_reply(word: str) -> str:
+def spell_letters(word: str) -> str:
+    """Real letters for the UI / transcript (the child SEES C - A - T)."""
+    return " - ".join(ch.upper() for ch in word if ch.isalpha())
+
+
+def spell_word_reply(word: str):
+    """Return (spoken, display): SPEAK the letter sounds, SHOW the real letters."""
     w = word.strip().lower()
-    return f"{w.capitalize()} is spelled... {spell_sounds(w)}. {w.capitalize()}!"
+    spoken = f"{w.capitalize()} is spelled... {spell_sounds(w)} {w.capitalize()}!"
+    display = f"{w.capitalize()} is spelled {spell_letters(w)}. {w.capitalize()}!"
+    return spoken, display
 
 
-def spell_game_reply(index: int) -> str:
-    """A teaching-style spelling prompt (deterministic given an index → testable)."""
+def spell_game_reply(index: int):
+    """A teaching-style spelling prompt. Returns (spoken, display)."""
     word = SPELL_WORDS[index % len(SPELL_WORDS)]
-    return (f"Let's spell {word.capitalize()}! It goes... {spell_sounds(word)}. "
-            f"{word.capitalize()}! Now you try it!")
+    spoken = (f"Let's spell {word.capitalize()}! {spell_sounds(word)} "
+              f"{word.capitalize()}! Now you try it!")
+    display = (f"Let's spell {word.capitalize()}! It goes {spell_letters(word)}. "
+               f"{word.capitalize()}! Now you try it!")
+    return spoken, display
 
 
 def detect_play_intent(text: str) -> Tuple[Optional[str], Optional[str]]:

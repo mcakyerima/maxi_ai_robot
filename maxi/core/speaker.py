@@ -60,6 +60,20 @@ class Speaker:
             spoken.append(sentence.text)
         return " ".join(spoken)
 
+    async def say_as(self, spoken: str, display: str) -> str:
+        """Speak ``spoken`` but show ``display`` in the UI/transcript. Used for
+        spelling: SAY the letter sounds ("see! ay! tee!") while the child SEES the
+        real letters ("C - A - T"). Returns ``display`` (what to store in memory)."""
+        # UI bubble gets the real spelling once; echo-rejection gets the real words.
+        self.session.current_script = spoken
+        await self.transport.emit(events.speaking_script(spoken))
+        await self.transport.emit(events.response_chunk(display))
+        async for sentence in self.tts.speak(spoken):
+            if sentence.audio_b64:
+                self.session.mark_audio_sent()
+                await self.transport.emit(events.audio_chunk(sentence.audio_b64))
+        return display
+
     async def say_stream(
         self, llm: LLMService, messages: List[Message], *, max_tokens: Optional[int] = None
     ) -> str:

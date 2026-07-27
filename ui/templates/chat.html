@@ -825,6 +825,31 @@
         box-shadow: 0 0 22px #ff8e53;
       }
 
+      /* --- Head interactions: tap = play; hold 3s = refresh + reset --- */
+      .robot-container { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      @keyframes poke-wiggle { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-14deg)} 75%{transform:rotate(14deg)} }
+      @keyframes poke-bounce { 0%,100%{transform:translateY(0)} 30%{transform:translateY(-26px)} 60%{transform:translateY(8px)} }
+      @keyframes poke-spin   { 100%{transform:rotate(360deg)} }
+      @keyframes poke-shake  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-12px)} 40%{transform:translateX(12px)} 60%{transform:translateX(-9px)} 80%{transform:translateX(9px)} }
+      @keyframes poke-nod    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(14px)} }
+      @keyframes poke-jump   { 0%,100%{transform:translateY(0) scale(1)} 40%{transform:translateY(-32px) scale(1.06)} }
+      @keyframes poke-tilt   { 0%,100%{transform:rotate(0)} 50%{transform:rotate(22deg)} }
+      @keyframes poke-dizzy  { 0%{transform:rotate(0)} 25%{transform:rotate(18deg) scale(1.05)} 50%{transform:rotate(-18deg)} 75%{transform:rotate(12deg)} 100%{transform:rotate(0)} }
+      .poke-wiggle { animation: poke-wiggle 0.5s ease; }
+      .poke-bounce { animation: poke-bounce 0.6s ease; }
+      .poke-spin   { animation: poke-spin 0.7s ease-in-out; }
+      .poke-shake  { animation: poke-shake 0.55s ease; }
+      .poke-nod    { animation: poke-nod 0.5s ease; }
+      .poke-jump   { animation: poke-jump 0.6s ease; }
+      .poke-tilt   { animation: poke-tilt 0.6s ease; }
+      .poke-dizzy  { animation: poke-dizzy 0.7s ease; }
+      /* Hold-to-reset: the head grows + brightens over 3s as a "charging" cue. */
+      @keyframes head-charge {
+        0%   { transform: scale(1); filter: brightness(1); }
+        100% { transform: scale(1.18); filter: brightness(1.6) drop-shadow(0 0 24px var(--chat-accent)); }
+      }
+      .robot-container.head-charging { animation: head-charge 3s linear forwards; }
+
       @keyframes blink {
         0%,
         100% {
@@ -1216,6 +1241,64 @@
           this.requestFullscreen();
           this.setLandscapeOrientation();
           this.initWakeToggle();
+          this.setupHeadInteractions();
+        }
+
+        // Maxi's head is interactive: a quick TAP plays a random animation; a
+        // TAP-AND-HOLD for 3s refreshes the page + resets everything to a clean
+        // state (rescue hatch for a stuck mic / "Disconnected" — a reload reconnects
+        // and the connect handler puts the backend back to idle).
+        setupHeadInteractions() {
+          const head = document.querySelector(".robot-container");
+          if (!head) return;
+          const POKES = ["poke-wiggle", "poke-bounce", "poke-spin", "poke-shake",
+            "poke-nod", "poke-jump", "poke-tilt", "poke-dizzy"];
+          let holdTimer = null, pressAt = 0, fired = false;
+          const clearHold = () => {
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+            head.classList.remove("head-charging");
+          };
+          const onDown = (e) => {
+            if (e.cancelable) e.preventDefault();
+            pressAt = Date.now();
+            fired = false;
+            head.classList.add("head-charging");
+            holdTimer = setTimeout(() => { fired = true; this.resetViaHead(); }, 3000);
+          };
+          const onUp = () => {
+            const dur = Date.now() - pressAt;
+            clearHold();
+            if (!fired && dur < 3000) this.pokeHead(POKES);
+          };
+          head.addEventListener("pointerdown", onDown);
+          head.addEventListener("pointerup", onUp);
+          head.addEventListener("pointerleave", clearHold);
+          head.addEventListener("pointercancel", clearHold);
+        }
+
+        pokeHead(pokes) {
+          const head = document.querySelector(".robot-container");
+          if (!head) return;
+          const cls = pokes[Math.floor(Math.random() * pokes.length)];
+          pokes.forEach((p) => head.classList.remove(p));
+          void head.offsetWidth; // restart the animation
+          head.classList.add(cls);
+          setTimeout(() => head.classList.remove(cls), 750);
+        }
+
+        resetViaHead() {
+          try {
+            this.updateVoiceStatus("Resetting Maxi… 🔄", false);
+            this.updateStatus("Cleaning up — back in a moment!");
+          } catch (e) { /* ignore */ }
+          // Best-effort: stop audio + tell the backend to go idle before we reload.
+          try { this.audioPlayer && this.audioPlayer.stop(); } catch (e) {}
+          try {
+            if (this.socket && this.socket.connected) {
+              this.socket.emit("message", { type: "back_to_menu" });
+            }
+          } catch (e) {}
+          setTimeout(() => location.reload(), 400);
         }
 
         // In-page wake-word on/off (mirrors Settings, key: maxi_wake_word). Changing

@@ -673,6 +673,19 @@
         }
         .emotion-badge.show { transform: translateX(-50%) scale(1); opacity: 1; }
 
+        /* Refresh + reset button */
+        .reset-btn {
+            position: fixed; top: 14px; right: 14px; z-index: 1600;
+            width: 48px; height: 48px; border-radius: 50%;
+            border: 1px solid var(--glass-border);
+            background: var(--glass); color: #fff; font-size: 1.3rem;
+            cursor: pointer; backdrop-filter: blur(10px);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+        .reset-btn:hover { background: var(--surface-hover); transform: rotate(90deg); }
+        .reset-btn:active { transform: rotate(180deg) scale(0.92); }
+
         .status-dot {
             width: 12px;
             height: 12px;
@@ -845,6 +858,9 @@
 
             <!-- Emotion reaction (math has no robot face; show a pop-in emoji). -->
             <div id="emotionBadge" class="emotion-badge" aria-hidden="true"></div>
+
+            <!-- Refresh + reset (rescue hatch for a stuck mic / Disconnected). -->
+            <button id="resetBtn" class="reset-btn" title="Refresh and reset">🔄</button>
 
             <!-- Wake-word on/off (also in Settings). Off = tap the mic only. -->
             <div class="wake-toggle-card">
@@ -1037,6 +1053,24 @@
                 this.requestFullscreen();
                 this.setLandscapeOrientation();
                 this.initWakeToggle();
+                this.setupResetButton();
+            }
+
+            // Refresh + reset: reload the page (reconnects + resets state) — the
+            // rescue hatch for a stuck mic or a "Disconnected" status.
+            setupResetButton() {
+                const btn = document.getElementById('resetBtn');
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    try { this.audioPlayer && this.audioPlayer.stop(); } catch (e) {}
+                    try {
+                        if (this.socket && this.socket.connected) {
+                            this.socket.emit('message', { type: 'back_to_menu' });
+                        }
+                    } catch (e) {}
+                    try { this.updateVoiceStatus('Resetting… 🔄', false); } catch (e) {}
+                    setTimeout(() => location.reload(), 300);
+                });
             }
 
             // In-page wake-word on/off (mirrors Settings, key: maxi_wake_word).

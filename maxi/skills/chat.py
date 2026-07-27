@@ -74,21 +74,22 @@ class ChatSkill(Skill):
             await ctx.memory.add_assistant(dt_reply)
             return
 
-        # Spelling is answered LOCALLY (instant, always correct).
+        # Spelling is answered LOCALLY (instant, always correct). Maxi SPEAKS the
+        # letter sounds but the UI/transcript SHOWS the real letters.
         intent, arg = detect_play_intent(text)
         if intent == "spell_word":
-            reply = spell_word_reply(arg)
+            spoken, display = spell_word_reply(arg)
             await ctx.emit(events.emotion("happy"))
-            await ctx.speaker.say(reply)
+            await ctx.speaker.say_as(spoken, display)
             await ctx.memory.add_user(text)
-            await ctx.memory.add_assistant(reply)
+            await ctx.memory.add_assistant(display)
             return
         if intent == "spell_game":
-            reply = spell_game_reply(random.randrange(len(SPELL_WORDS)))
+            spoken, display = spell_game_reply(random.randrange(len(SPELL_WORDS)))
             await ctx.emit(events.emotion("happy"))
-            await ctx.speaker.say(reply)
+            await ctx.speaker.say_as(spoken, display)
             await ctx.memory.add_user(text)
-            await ctx.memory.add_assistant(reply)
+            await ctx.memory.add_assistant(display)
             return
 
         await ctx.memory.add_user(text)
