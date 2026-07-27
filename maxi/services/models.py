@@ -13,6 +13,7 @@ Everything is best-effort: a failed download just leaves the tablet on push-to-t
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import threading
