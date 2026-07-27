@@ -11,6 +11,7 @@ import logging
 from maxi.core.events import Mode
 from maxi.services.safety import Safety
 from maxi.skills.base import Skill, SkillContext
+from maxi.skills.datetime_intent import maybe_answer_datetime
 
 logger = logging.getLogger("maxi.skills.chat")
 
@@ -42,6 +43,15 @@ class ChatSkill(Skill):
             return
 
         self.safety.log_question(ctx.session_id, text, "chat")
+
+        # Time/date is answered locally with the REAL local clock (the LLM can't
+        # know it). Kid-friendly, instant, always correct.
+        dt_reply = maybe_answer_datetime(text)
+        if dt_reply:
+            await ctx.speaker.say(dt_reply)
+            await ctx.memory.add_user(text)
+            await ctx.memory.add_assistant(dt_reply)
+            return
 
         await ctx.memory.add_user(text)
         messages = await ctx.memory.context(text)

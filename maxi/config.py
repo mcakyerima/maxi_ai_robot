@@ -206,6 +206,9 @@ class Settings:
     # Persona / location context used by the tutoring system prompt.
     persona_name: str = field(default_factory=lambda: _get("MAXI_NAME", "Maxi"))
     location: str = field(default_factory=lambda: _get("MAXI_LOCATION", "Maiduguri, Borno State, Nigeria"))
+    # Local clock offset from UTC for the time/date skill. Nigeria = WAT = +1 (no DST).
+    # Railway runs in UTC, so this is how Maxi tells the child the *local* time.
+    tz_offset_hours: float = field(default_factory=lambda: _get_float("MAXI_UTC_OFFSET_HOURS", 1.0))
     creator: str = field(default_factory=lambda: _get("MAXI_CREATOR", "Mohammed Kaka"))
     company: str = field(default_factory=lambda: _get("MAXI_COMPANY", "Maxeeton Technology"))
 
