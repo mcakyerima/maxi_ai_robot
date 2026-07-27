@@ -663,6 +663,16 @@
         .wtoggle input:checked + .wtoggle-slider { background: var(--primary-gradient); }
         .wtoggle input:checked + .wtoggle-slider::before { transform: translateX(26px); }
 
+        /* Emotion reaction badge (pop-in emoji) */
+        .emotion-badge {
+            position: fixed; top: 13%; left: 50%;
+            transform: translateX(-50%) scale(0);
+            font-size: 4.2rem; z-index: 1500; pointer-events: none; opacity: 0;
+            filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.45));
+            transition: transform 0.25s cubic-bezier(.2, 1.6, .4, 1), opacity 0.4s ease;
+        }
+        .emotion-badge.show { transform: translateX(-50%) scale(1); opacity: 1; }
+
         .status-dot {
             width: 12px;
             height: 12px;
@@ -832,6 +842,9 @@
                     <span id="connectionStatus">Connecting...</span>
                 </div>
             </div>
+
+            <!-- Emotion reaction (math has no robot face; show a pop-in emoji). -->
+            <div id="emotionBadge" class="emotion-badge" aria-hidden="true"></div>
 
             <!-- Wake-word on/off (also in Settings). Off = tap the mic only. -->
             <div class="wake-toggle-card">
@@ -1436,10 +1449,26 @@
                     case 'error':
                         this.showError(data.message);
                         break;
+                    case 'emotion':
+                        this.showEmotionEmoji(data.emotion);
+                        break;
                     case 'math_sequence':
                         this.handleMathSequence(data);
                         break;
                 }
+            }
+
+            // Math page has no robot face, so show the expression as a pop-in emoji.
+            showEmotionEmoji(name) {
+                const map = { happy: '😊', excited: '🤩', curious: '🤔', proud: '😎', surprised: '😮', sad: '🙁', neutral: '' };
+                const el = document.getElementById('emotionBadge');
+                if (!el) return;
+                const emoji = map[name];
+                if (!emoji) { el.classList.remove('show'); return; }
+                el.textContent = emoji;
+                el.classList.add('show');
+                clearTimeout(this._emotionTimer);
+                this._emotionTimer = setTimeout(() => el.classList.remove('show'), 2600);
             }
 
             handleAudioChunk(data) {

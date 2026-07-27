@@ -46,11 +46,12 @@ check("plain question → no intent", detect_play_intent("why is the sky blue") 
 check("'what is 2 plus 2' → no intent", detect_play_intent("what is 2 plus 2") == (None, None))
 check("empty → no intent", detect_play_intent("") == (None, None))
 
-print("\nlocal handlers:")
-check("spell 'cat' spells it out", spell_word_reply("cat") == "Cat is spelled C - A - T. Cat!")
-check("spell keeps only letters", "M - A - N - G - O" in spell_word_reply("mango"))
+print("\nlocal handlers (phonetic spelling — edge-tts reads letter names clearly):")
+check("spell 'cat' → letter sounds", spell_word_reply("cat") == "Cat is spelled... see, ay, tee. Cat!")
+check("spell 'mango' → letter sounds", "em, ay, en, gee, oh" in spell_word_reply("mango"))
 game = spell_game_reply(0)
-check("spell game gives a word + spelling + invite", "spell" in game.lower() and " - " in game and "try" in game.lower())
+check("spell game gives a word + spelling + invite",
+      "spell" in game.lower() and "," in game and "try" in game.lower())
 check("spell game is deterministic by index", spell_game_reply(0) == spell_game_reply(0))
 
 print("\nllm guidance:")

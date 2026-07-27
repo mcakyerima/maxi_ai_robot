@@ -22,7 +22,7 @@ import logging
 import re
 from dataclasses import dataclass
 from io import BytesIO
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Optional
 
 import edge_tts
 
@@ -62,14 +62,17 @@ class SpeechService:
         ]
         self._fallback_idx = 0
 
-    async def synthesize(self, text: str, *, _retry: int = 0) -> bytes:
-        """Return mp3 bytes for one chunk, with 403/rate-limit retry + voice fallback."""
+    async def synthesize(self, text: str, *, voice: Optional[str] = None, _retry: int = 0) -> bytes:
+        """Return mp3 bytes for one chunk, with 403/rate-limit retry + voice fallback.
+        ``voice`` overrides the default for this call (e.g. a specific language voice
+        that pronounces a particular ack correctly)."""
         clean = _clean(text)
         if not clean:
             return b""
+        use_voice = voice or self.voice
         try:
             communicate = edge_tts.Communicate(
-                text=clean, voice=self.voice, rate=self.rate, pitch=self.pitch
+                text=clean, voice=use_voice, rate=self.rate, pitch=self.pitch
             )
             buf = BytesIO()
             async for chunk in communicate.stream():
@@ -81,13 +84,13 @@ class SpeechService:
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             if ("403" in msg or "Invalid response status" in msg) and _retry < 3:
-                # Rotate to a fallback voice and back off.
-                if self._fallback_idx < len(self._fallback_voices):
+                # Only rotate the DEFAULT voice; an explicit override keeps its voice.
+                if voice is None and self._fallback_idx < len(self._fallback_voices):
                     self.voice = self._fallback_voices[self._fallback_idx]
                     self._fallback_idx += 1
                     logger.warning("Edge-TTS 403; switching voice to %s", self.voice)
                 await asyncio.sleep([1, 2, 5][min(_retry, 2)])
-                return await self.synthesize(text, _retry=_retry + 1)
+                return await self.synthesize(text, voice=voice, _retry=_retry + 1)
             logger.error("TTS synth failed for %r: %s", clean[:40], exc)
             return b""
 

@@ -137,7 +137,7 @@ def highlight_step(step_number: int) -> Dict[str, Any]:
 
 
 # Robot-face expressions the tablet knows how to render.
-EMOTIONS = ("neutral", "happy", "excited", "curious", "sad")
+EMOTIONS = ("neutral", "happy", "excited", "curious", "sad", "proud", "surprised")
 
 
 def emotion(name: str) -> Dict[str, Any]:

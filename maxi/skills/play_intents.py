@@ -44,21 +44,32 @@ SPELL_WORDS = [
     "mango", "water", "house", "school", "friend", "yellow", "orange", "banana",
 ]
 
+# Our voice agent (edge-tts) can't take SSML, and reads "C - A - T" as garble.
+# So we spell with the LETTER SOUNDS as plain words — how Alexa/Google actually
+# spell — which the TTS pronounces clearly. (British "zed" for a Nigerian child.)
+LETTER_SOUNDS = {
+    "a": "ay", "b": "bee", "c": "see", "d": "dee", "e": "ee", "f": "ef",
+    "g": "gee", "h": "aitch", "i": "eye", "j": "jay", "k": "kay", "l": "el",
+    "m": "em", "n": "en", "o": "oh", "p": "pee", "q": "cue", "r": "arr",
+    "s": "ess", "t": "tee", "u": "you", "v": "vee", "w": "double-you",
+    "x": "eks", "y": "why", "z": "zed",
+}
 
-def _spell_out(word: str) -> str:
-    return " - ".join(ch.upper() for ch in word if ch.isalpha())
+
+def spell_sounds(word: str) -> str:
+    """The word spelled as clearly-pronounced letter sounds, comma-separated."""
+    return ", ".join(LETTER_SOUNDS.get(ch, ch) for ch in word.lower() if ch.isalpha())
 
 
 def spell_word_reply(word: str) -> str:
     w = word.strip().lower()
-    letters = _spell_out(w)
-    return f"{w.capitalize()} is spelled {letters}. {w.capitalize()}!"
+    return f"{w.capitalize()} is spelled... {spell_sounds(w)}. {w.capitalize()}!"
 
 
 def spell_game_reply(index: int) -> str:
     """A teaching-style spelling prompt (deterministic given an index → testable)."""
     word = SPELL_WORDS[index % len(SPELL_WORDS)]
-    return (f"Let's spell {word.capitalize()}! It goes {_spell_out(word)}. "
+    return (f"Let's spell {word.capitalize()}! It goes... {spell_sounds(word)}. "
             f"{word.capitalize()}! Now you try it!")
 
 

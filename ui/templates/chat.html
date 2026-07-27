@@ -794,6 +794,37 @@
       }
       .emotion-sad .eye { background-color: #7aa2ff; box-shadow: 0 0 12px #7aa2ff; }
 
+      /* proud = big grin + warm glow */
+      .emotion-proud .mouth {
+        height: 30px;
+        background: transparent;
+        border: 6px solid #ffd166;
+        border-top: none;
+        border-radius: 0 0 80px 80px;
+        box-shadow: 0 6px 12px rgba(255, 209, 102, 0.35);
+        animation: none;
+      }
+      .emotion-proud .eye {
+        background-color: #ffd166;
+        box-shadow: 0 0 20px #ffd166;
+        transform: scale(1.1);
+      }
+
+      /* surprised = wide eyes + small round mouth */
+      .emotion-surprised .mouth {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: #ff8e53;
+        box-shadow: 0 0 14px #ff8e53;
+        animation: none;
+      }
+      .emotion-surprised .eye {
+        transform: scale(1.35);
+        background-color: #ff8e53;
+        box-shadow: 0 0 22px #ff8e53;
+      }
+
       @keyframes blink {
         0%,
         100% {
@@ -1748,7 +1779,7 @@
 
         // Content-driven robot-face expression (from the backend `emotion` event).
         setEmotion(name) {
-          const ok = ["neutral", "happy", "excited", "curious", "sad"];
+          const ok = ["neutral", "happy", "excited", "curious", "sad", "proud", "surprised"];
           this.currentEmotion = ok.indexOf(name) !== -1 && name !== "neutral" ? name : null;
           if (!this.robotFace) return;
           ok.forEach((e) => this.robotFace.classList.remove("emotion-" + e));

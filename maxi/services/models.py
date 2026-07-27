@@ -35,14 +35,22 @@ _acking = False
 
 _inflight: set = set()  # ack filenames currently being rendered (dedupe)
 
-# Short wake acknowledgements, spoken in Maxi's OWN voice (edge-tts). Pre-rendered
-# once on boot to the volume and served from /acks, so the tablet plays a cached
-# clip instantly (fast) instead of an off-brand browser voice.
-# NOTE: filenames are content-hashed, so editing a phrase auto-renders a new clip.
-ACK_PHRASES = [
-    "Yes?", "Yeah?", "I'm here!", "Go ahead!",
-    "What's up?", "I'm listening!", "Uh huh?", "Mmm hmm!",
-    "Sannu!",  # Hausa "hello" — a warm local touch
+# Short wake acknowledgements, pre-rendered once on boot to the volume and served
+# from /acks, so the tablet plays a cached clip instantly (fast).
+# Each item is (text, voice) — voice=None uses Maxi's default voice; a specific voice
+# is used when only that language voice pronounces the sound right. Filenames are
+# content-hashed (text+voice), so editing either auto-renders a fresh clip.
+ACK_ITEMS = [
+    ("Yes?", None),
+    ("Yeah?", None),
+    ("I'm here!", None),
+    ("Go ahead!", None),
+    ("What's up?", None),
+    ("I'm listening!", None),
+    ("Uh huh?", None),
+    # The affirmative "mm-hmm" sound only lands right in fr-BE (tested in the MS
+    # voice gallery); render just this clip with that voice.
+    ("naa,amm", "fr-BE-CharlineNeural"),
 ]
 
 # Personalised greetings, filled with the child's remembered name when known.
@@ -149,10 +157,14 @@ def _present(filename: str) -> bool:
         return False
 
 
+def _ack_filename(text: str, voice: Optional[str]) -> str:
+    return f"ack_{_short(text + '|' + (voice or ''))}.mp3"
+
+
 def _base_ack_items() -> list:
-    """(filename, text) for each generic ack. Filename is content-hashed so a phrase
-    edit produces a NEW file (auto-regenerated) instead of reusing a stale clip."""
-    return [(f"ack_{_short(p)}.mp3", p) for p in ACK_PHRASES]
+    """(filename, text, voice) for each generic ack. Filename is content-hashed
+    (text + voice), so editing either produces a NEW file (auto-regenerated)."""
+    return [(_ack_filename(text, voice), text, voice) for text, voice in ACK_ITEMS]
 
 
 def current_child_name() -> Optional[str]:
@@ -171,27 +183,27 @@ def current_child_name() -> Optional[str]:
 
 
 def _name_ack_items(name: str) -> list:
-    """(filename, text) for the personalised greetings for ``name``."""
+    """(filename, text, voice) for the personalised greetings for ``name``."""
     h = _short(name.lower())
-    return [(f"name_{h}_{k}.mp3", tpl.format(name=name)) for k, tpl in enumerate(NAME_ACK_TEMPLATES)]
+    return [(f"name_{h}_{k}.mp3", tpl.format(name=name), None) for k, tpl in enumerate(NAME_ACK_TEMPLATES)]
 
 
 def ack_urls_ready() -> list:
     """All rendered ack clip URLs (generic + the current name's), for the tablet."""
-    urls = ["/acks/" + fn for fn, _ in _base_ack_items() if _present(fn)]
+    urls = ["/acks/" + fn for fn, _, _ in _base_ack_items() if _present(fn)]
     name = current_child_name()
     if name:
-        urls += ["/acks/" + fn for fn, _ in _name_ack_items(name) if _present(fn)]
+        urls += ["/acks/" + fn for fn, _, _ in _name_ack_items(name) if _present(fn)]
     return urls
 
 
 def _ensure_async(items: list) -> None:
-    """Render any missing (filename, text) clips in the background, once."""
-    todo = [(fn, txt) for fn, txt in items if not _present(fn) and fn not in _inflight]
+    """Render any missing (filename, text, voice) clips in the background, once."""
+    todo = [(fn, txt, voice) for fn, txt, voice in items if not _present(fn) and fn not in _inflight]
     if not todo:
         return
     with _ack_lock:
-        for fn, _ in todo:
+        for fn, _, _ in todo:
             _inflight.add(fn)
 
     def _worker() -> None:
@@ -199,7 +211,7 @@ def _ensure_async(items: list) -> None:
             _render_clips(todo)
         finally:
             with _ack_lock:
-                for fn, _ in todo:
+                for fn, _, _ in todo:
                     _inflight.discard(fn)
 
     threading.Thread(target=_worker, name="wake-ack-render", daemon=True).start()
@@ -211,15 +223,16 @@ def _render_clips(items: list) -> None:
         svc = SpeechService()
 
         async def _go() -> None:
-            for fn, text in items:
+            for fn, text, voice in items:
                 path = os.path.join(ack_dir(), fn)
                 if _present(fn):
                     continue
-                audio = await svc.synthesize(text)
+                audio = await svc.synthesize(text, voice=voice)
                 if audio:
                     with open(path, "wb") as fh:
                         fh.write(audio)
-                    logger.info("🔊 ack clip rendered (%d bytes): %r → %s", len(audio), text, fn)
+                    logger.info("🔊 ack clip rendered (%d bytes, voice=%s): %r → %s",
+                                len(audio), voice or "default", text, fn)
                 else:
                     logger.warning("ack clip came back empty: %r", text)
 

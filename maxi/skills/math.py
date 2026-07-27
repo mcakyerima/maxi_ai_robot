@@ -266,6 +266,7 @@ class MathSkill(Skill):
         elif is_finger and hands:
             await hands.show_number(result_int, "right")
 
+        await ctx.emit(events.emotion("happy"))
         await ctx.speaker.say(f"The answer is {result_str}!")
         if explanation:
             await ctx.speaker.say(explanation)
@@ -378,6 +379,7 @@ class MathSkill(Skill):
             await ctx.speaker.say(desc)
             await asyncio.sleep(max(0.6, len(desc.split()) / 2.7 + 0.3))
         # 4) Final answer + wrap-up — restate it in the story's own words when we have it.
+        await ctx.emit(events.emotion("proud"))
         await ctx.speaker.say(final_answer or f"So the answer is {result_str}!")
         if breakdown:
             await ctx.speaker.say(breakdown)
