@@ -42,6 +42,7 @@ _inflight: set = set()  # ack filenames currently being rendered (dedupe)
 ACK_PHRASES = [
     "Yes?", "Yeah?", "I'm here!", "Go ahead!",
     "What's up?", "I'm listening!", "Uh huh?", "Mmm hmm!",
+    "Sannu!",  # Hausa "hello" — a warm local touch
 ]
 
 # Personalised greetings, filled with the child's remembered name when known.

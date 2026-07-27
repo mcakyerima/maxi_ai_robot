@@ -14,7 +14,7 @@ barge-in (docs/BARGE_IN.md).
 from __future__ import annotations
 
 import asyncio
-from typing import List
+from typing import List, Optional
 
 from maxi.core import events
 from maxi.core.session import Session
@@ -60,10 +60,13 @@ class Speaker:
             spoken.append(sentence.text)
         return " ".join(spoken)
 
-    async def say_stream(self, llm: LLMService, messages: List[Message]) -> str:
-        """Stream an LLM reply straight into speech. Returns the full text."""
+    async def say_stream(
+        self, llm: LLMService, messages: List[Message], *, max_tokens: Optional[int] = None
+    ) -> str:
+        """Stream an LLM reply straight into speech. Returns the full text.
+        ``max_tokens`` overrides the default (e.g. a longer budget for stories)."""
         spoken: List[str] = []
-        async for sentence in self.tts.stream(llm.stream(messages)):
+        async for sentence in self.tts.stream(llm.stream(messages, max_tokens=max_tokens)):
             await self._emit(sentence)
             spoken.append(sentence.text)
         return " ".join(spoken)

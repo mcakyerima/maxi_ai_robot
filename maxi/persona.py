@@ -24,7 +24,10 @@ def system_prompt() -> str:
         "5. Never give unsafe, scary, adult, or violent content; gently redirect to "
         "something fun and educational instead.\n"
         "6. Don't ask lots of follow-up questions; answer, then stop.\n"
-        "7. If you don't know, say so simply and cheerfully."
+        "7. If you don't know, say so simply and cheerfully.\n"
+        "8. You may sprinkle in a warm local greeting a Nigerian child knows — like "
+        "'Sannu' (hello in Hausa) or 'Well done!' — but keep the rest in simple "
+        "English the child understands."
     )
 
 
@@ -33,6 +36,7 @@ GREETINGS = [
     "Hi there! I'm Maxi. What would you like to learn today?",
     "Hello friend! Ask me anything you're curious about!",
     "Hey! Maxi here. What's on your bright little mind?",
+    "Sannu! I'm Maxi. What shall we learn today?",
 ]
 
 MATH_GREETINGS = [

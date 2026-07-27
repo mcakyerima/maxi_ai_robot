@@ -746,6 +746,54 @@
         box-shadow: 0 0 10px #ffbb00;
       }
 
+      /* Content-driven expressions (layered on top of the state) */
+      .emotion-happy .mouth {
+        height: 34px;
+        background: transparent;
+        border: 5px solid #38ef7d;
+        border-top: none;
+        border-radius: 0 0 70px 70px;
+        box-shadow: 0 6px 10px rgba(56, 239, 125, 0.3);
+        animation: none;
+      }
+      .emotion-happy .eye { background-color: #38ef7d; box-shadow: 0 0 15px #38ef7d; }
+
+      .emotion-excited .mouth {
+        height: 40px;
+        width: 40px;
+        background: #ffe66d;
+        border-radius: 50%;
+        box-shadow: 0 0 15px #ffe66d;
+        animation: none;
+      }
+      .emotion-excited .eye {
+        background-color: #ffe66d;
+        box-shadow: 0 0 20px #ffe66d;
+        transform: scale(1.15);
+      }
+
+      .emotion-curious .mouth {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--chat-accent);
+        box-shadow: 0 0 12px var(--chat-accent);
+        animation: none;
+      }
+      .emotion-curious .robot-face,
+      .robot-face.emotion-curious { transform: rotate(-4deg); }
+
+      .emotion-sad .mouth {
+        height: 30px;
+        background: transparent;
+        border: 5px solid #7aa2ff;
+        border-bottom: none;
+        border-radius: 70px 70px 0 0;
+        bottom: 40px;
+        animation: none;
+      }
+      .emotion-sad .eye { background-color: #7aa2ff; box-shadow: 0 0 12px #7aa2ff; }
+
       @keyframes blink {
         0%,
         100% {
@@ -1547,6 +1595,9 @@
             case "finger_pose":
               // (hand pose mirroring handled on math page)
               break;
+            case "emotion":
+              this.setEmotion(data.emotion);
+              break;
             case "error":
               this.showError(data.message);
               break;
@@ -1663,6 +1714,9 @@
         }
 
         setRobotState(state) {
+          // A new turn (idle/listening) clears any content-driven expression.
+          if (state === "idle" || state === "listening") this.currentEmotion = null;
+
           // Reset all state classes
           this.robotFace.className = "robot-face";
 
@@ -1688,6 +1742,17 @@
               this.robotFace.classList.add("interrupted-mode");
               break;
           }
+          // Re-apply the current expression on top of the state (className was reset).
+          if (this.currentEmotion) this.robotFace.classList.add("emotion-" + this.currentEmotion);
+        }
+
+        // Content-driven robot-face expression (from the backend `emotion` event).
+        setEmotion(name) {
+          const ok = ["neutral", "happy", "excited", "curious", "sad"];
+          this.currentEmotion = ok.indexOf(name) !== -1 && name !== "neutral" ? name : null;
+          if (!this.robotFace) return;
+          ok.forEach((e) => this.robotFace.classList.remove("emotion-" + e));
+          if (this.currentEmotion) this.robotFace.classList.add("emotion-" + this.currentEmotion);
         }
 
         updateVoiceStatus(text, isListening) {

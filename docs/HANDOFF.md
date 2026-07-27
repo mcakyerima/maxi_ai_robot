@@ -255,9 +255,15 @@ live-testable once a (free) Picovoice AccessKey is set.
    (SQLite facts/topics + rolling summary, no heavy deps). See §9b. Future option:
    upgrade to embedding recall via `brain/context_manager` IF semantic search is ever
    needed (adds torch/sentence-transformers — deliberately avoided for now).
-8. More skills: storytelling, spelling, science Q&A, quizzes, songs, games.
-9. Personality/expression: richer robot-face emotions synced to content.
-10. Local language (Hausa/Kanuri/pidgin).
+8. ✅ More skills (DONE, intent-based in ChatSkill): **time/date**
+   (`skills/datetime_intent.py`), **storytelling / spelling / quizzes**
+   (`skills/play_intents.py`). Spelling is answered locally; story/quiz use a
+   specialised LLM prompt + the child's name. Add more the same way.
+9. ✅ Personality/expression (DONE, first pass): `emotion` event
+   (`events.emotion`) → tablet robot-face expressions (happy/excited/curious/sad) in
+   chat.html; skills emit per intent. Extend to math + more nuance later.
+10. ~ Local language (started): persona may greet in Hausa ("Sannu"), a "Sannu!"
+    wake ack, local greeting. Deepen (Hausa/Kanuri/pidgin) later.
 
 **Tier 4 — body & pedagogy**
 11. More limbs (arms/head/eyes) — actuator abstraction is ready.

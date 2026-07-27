@@ -47,6 +47,7 @@ class Outgoing(str, Enum):
     FINGER_POSE = "finger_pose"          # {pose} — mirror hand movement in the UI
     MATH_RESULT = "math_result"          # {A,B,OP,result,explanation,mode} — math display
     HIGHLIGHT_STEP = "highlight_step"    # {step_number} — highlight a solution step
+    EMOTION = "emotion"                  # {emotion} — robot-face expression synced to content
     ERROR = "error"                      # {message}
     PONG = "pong"
 
@@ -133,6 +134,16 @@ def math_advanced(original_question: str, result: Any, steps: list,
 def highlight_step(step_number: int) -> Dict[str, Any]:
     """Highlight the given step in the UI while Maxi explains it."""
     return _msg(Outgoing.HIGHLIGHT_STEP, step_number=step_number)
+
+
+# Robot-face expressions the tablet knows how to render.
+EMOTIONS = ("neutral", "happy", "excited", "curious", "sad")
+
+
+def emotion(name: str) -> Dict[str, Any]:
+    """Set the robot face's expression (happy | excited | curious | sad | neutral)."""
+    name = name if name in EMOTIONS else "neutral"
+    return _msg(Outgoing.EMOTION, emotion=name)
 
 
 def error(message: str) -> Dict[str, Any]:
