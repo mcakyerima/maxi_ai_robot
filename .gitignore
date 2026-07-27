@@ -34,6 +34,7 @@ vosk-model-*/
 vosk-model-*
 *.tar.gz
 data/models/
+data/acks/
 ollama_models/
 piper/
 *.ppn

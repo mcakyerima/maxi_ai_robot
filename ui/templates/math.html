@@ -632,6 +632,37 @@
             gap: 10px;
         }
 
+        /* Wake-word toggle card (matches the glass panels) */
+        .wake-toggle-card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 16px 20px;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .wake-toggle-label { text-align: left; }
+        .wake-toggle-title { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .wake-toggle-sub { font-size: 0.72rem; opacity: 0.65; margin-top: 3px; }
+        .wtoggle { position: relative; display: inline-block; width: 58px; height: 32px; flex: none; }
+        .wtoggle input { opacity: 0; width: 0; height: 0; }
+        .wtoggle-slider {
+            position: absolute; cursor: pointer; inset: 0;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid var(--glass-border);
+            transition: 0.3s; border-radius: 32px;
+        }
+        .wtoggle-slider::before {
+            content: ""; position: absolute; height: 22px; width: 22px; left: 4px; top: 4px;
+            background: #fff; border-radius: 50%; transition: 0.3s;
+        }
+        .wtoggle input:checked + .wtoggle-slider { background: var(--primary-gradient); }
+        .wtoggle input:checked + .wtoggle-slider::before { transform: translateX(26px); }
+
         .status-dot {
             width: 12px;
             height: 12px;
@@ -800,6 +831,18 @@
                     <div id="statusDot" class="status-dot"></div>
                     <span id="connectionStatus">Connecting...</span>
                 </div>
+            </div>
+
+            <!-- Wake-word on/off (also in Settings). Off = tap the mic only. -->
+            <div class="wake-toggle-card">
+                <div class="wake-toggle-label">
+                    <div class="wake-toggle-title"><i class="fas fa-microphone-lines"></i> Wake Word</div>
+                    <div class="wake-toggle-sub">Say &ldquo;Hey Maxi&rdquo; &middot; Off = tap only</div>
+                </div>
+                <label class="wtoggle">
+                    <input type="checkbox" id="wakeWordToggle">
+                    <span class="wtoggle-slider"></span>
+                </label>
             </div>
         </div>
 
@@ -980,6 +1023,22 @@
                 this.initWebSocket();
                 this.requestFullscreen();
                 this.setLandscapeOrientation();
+                this.initWakeToggle();
+            }
+
+            // In-page wake-word on/off (mirrors Settings, key: maxi_wake_word).
+            // Changing it reloads so the engine rebuilds cleanly.
+            initWakeToggle() {
+                const cb = document.getElementById('wakeWordToggle');
+                if (!cb) return;
+                let v = 'on';
+                try { v = localStorage.getItem('maxi_wake_word') || 'on'; } catch (e) {}
+                cb.checked = v !== 'off';
+                cb.addEventListener('change', () => {
+                    try { localStorage.setItem('maxi_wake_word', cb.checked ? 'on' : 'off'); } catch (e) {}
+                    this.updateVoiceStatus(cb.checked ? 'Wake word ON — reloading…' : 'Buttons only — reloading…', false);
+                    setTimeout(() => location.reload(), 500);
+                });
             }
 
             // --- Voice engine (wake word + self-echo-safe barge-in) ---
@@ -988,6 +1047,7 @@
                     console.warn('MaxiVoiceEngine not loaded - mic button only');
                     return { setMode() {}, setScript() {}, clearScript() {}, start() {}, stop() {}, isSupported: () => false };
                 }
+                this.preloadWakeAcks();
                 // Beepless hands-free wake word (progressive enhancement). Backend
                 // picks the engine (porcupine | vosk | none); null → push-to-talk.
                 this._wakeProvider = this.pickWakeProvider();
@@ -1002,35 +1062,40 @@
                 });
             }
 
-            // Alexa-style spoken ack after the wake word (browser speechSynthesis,
-            // local + precise). Resolves when speech ends → engine opens the mic
-            // immediately after. The wake model is paused (cooling) while it speaks.
+            // Preload the Maxi-voice wake-ack clips (served from the volume).
+            preloadWakeAcks() {
+                const cfg = window.MAXI_VOICE_CONFIG || {};
+                const n = cfg.wakeAckCount || 0;
+                const base = cfg.wakeAckBase || '/acks/';
+                this._ackAudios = [];
+                for (let i = 1; i <= n; i++) {
+                    try {
+                        const a = new Audio(base + 'ack' + i + '.mp3');
+                        a.preload = 'auto';
+                        this._ackAudios.push(a);
+                    } catch (e) {}
+                }
+            }
+
+            // Acknowledgement after the wake word in MAXI'S OWN voice (pre-rendered
+            // clip). Resolves when the clip finishes → engine opens the mic right
+            // after Maxi is done. Wake model is paused (cooling) while it plays.
             speakWakeAck() {
                 return new Promise((resolve) => {
-                    const acks = ["I'm here!", "Yes?", "Mhm?", "What's up?", "Go ahead!", "Yeah?", "I'm listening!"];
-                    const text = acks[Math.floor(Math.random() * acks.length)];
-                    this.updateVoiceStatus(text, true);
+                    const list = this._ackAudios || [];
+                    if (!list.length) return setTimeout(resolve, 300);
+                    const a = list[Math.floor(Math.random() * list.length)];
+                    this.updateVoiceStatus('…', true);
+                    let done = false;
+                    const finish = () => { if (done) return; done = true; resolve(); };
                     try {
-                        const synth = window.speechSynthesis;
-                        if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
-                            return setTimeout(resolve, 450);
-                        }
-                        synth.cancel();
-                        const u = new SpeechSynthesisUtterance(text);
-                        u.rate = 1.05; u.pitch = 1.15; u.lang = 'en-US';
-                        const voices = synth.getVoices() || [];
-                        const pref = voices.find((v) => /en/i.test(v.lang) &&
-                            /female|samantha|zira|google us english|emma|karen|tessa/i.test(v.name));
-                        if (pref) u.voice = pref;
-                        let done = false;
-                        const finish = () => { if (done) return; done = true; resolve(); };
-                        u.onend = () => setTimeout(finish, 120);
-                        u.onerror = () => finish();
+                        a.onended = () => setTimeout(finish, 80);
+                        a.onerror = () => setTimeout(finish, 150);
                         setTimeout(finish, 2500);
-                        synth.speak(u);
-                    } catch (e) {
-                        setTimeout(resolve, 450);
-                    }
+                        try { a.currentTime = 0; } catch (e) {}
+                        const p = a.play();
+                        if (p && p.catch) p.catch(() => finish());
+                    } catch (e) { finish(); }
                 });
             }
 

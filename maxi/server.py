@@ -142,6 +142,14 @@ def serve_model(filename: str):
     return resp
 
 
+@app.route("/acks/<path:filename>")
+def serve_ack(filename: str):
+    """Serve the pre-rendered Maxi-voice wake-ack clips from the volume."""
+    resp = make_response(send_from_directory(model_service.ack_dir(), filename))
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 @app.route("/voice_config.js")
 def voice_config_js():
     """Serve the tablet's wake-word config as a JS global (window.MAXI_VOICE_CONFIG).
@@ -168,6 +176,9 @@ def voice_config_js():
         "voskModelUrl": "/models/" + v.vosk_model_file,
         "wakePhrase": v.wake_phrase,
         "voskMinConfidence": v.vosk_min_confidence,
+        # Wake acknowledgement clips (Maxi's voice), served from the volume.
+        "wakeAckCount": model_service.ack_count(),
+        "wakeAckBase": "/acks/",
     }
     if v.model_url:
         cfg["modelUrl"] = v.model_url
@@ -215,6 +226,9 @@ def main() -> None:
     if settings.voice.resolved_wake_engine == "vosk":
         model_service.ensure_vosk_model_async()
     logger.info("🎙️ %s", model_service.describe())
+    # Pre-render the Maxi-voice wake acknowledgements (once, to the volume).
+    if settings.voice.resolved_wake_engine != "none":
+        model_service.ensure_ack_clips_async()
     start_brain_thread()
     logger.info("Maxi v2 serving on http://%s:%s", settings.server.host, settings.server.port)
 

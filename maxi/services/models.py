@@ -28,6 +28,17 @@ logger = logging.getLogger("maxi.models")
 _seed_lock = threading.Lock()
 _seeding = False
 
+_ack_lock = threading.Lock()
+_acking = False
+
+# Short wake acknowledgements, spoken in Maxi's OWN voice (edge-tts). Pre-rendered
+# once on boot to the volume and served from /acks, so the tablet plays a cached
+# clip instantly (fast) instead of an off-brand browser voice.
+ACK_PHRASES = [
+    "Yes?", "Yeah?", "I'm here!", "Go ahead!",
+    "What's up?", "I'm listening!", "Uh huh?", "Mm-hmm?",
+]
+
 
 def model_dir() -> str:
     """Where big assets live. Prefers an explicit dir, then the Railway volume,
@@ -102,6 +113,73 @@ def _download_vosk_model() -> None:
     finally:
         with _seed_lock:
             _seeding = False
+
+
+def _asset_base() -> str:
+    volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "")
+    if volume:
+        return volume
+    return str(Path(__file__).resolve().parents[2] / "data")
+
+
+def ack_dir() -> str:
+    d = os.path.join(_asset_base(), "acks")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def ack_count() -> int:
+    """How many wake-ack clips are rendered and non-empty."""
+    n = 0
+    for i in range(len(ACK_PHRASES)):
+        p = os.path.join(ack_dir(), f"ack{i + 1}.mp3")
+        try:
+            if os.path.isfile(p) and os.path.getsize(p) > 500:
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def ensure_ack_clips_async() -> None:
+    """Render the wake-ack clips (Maxi's voice) to the volume once, in the
+    background. No-op if already present or a render is in flight."""
+    global _acking
+    if ack_count() >= len(ACK_PHRASES):
+        return
+    with _ack_lock:
+        if _acking:
+            return
+        _acking = True
+    threading.Thread(target=_render_ack_clips, name="wake-ack-render", daemon=True).start()
+
+
+def _render_ack_clips() -> None:
+    global _acking
+    try:
+        from maxi.services.tts import SpeechService  # local import: avoids a cycle at import time
+        svc = SpeechService()
+
+        async def _go() -> None:
+            for i, phrase in enumerate(ACK_PHRASES):
+                path = os.path.join(ack_dir(), f"ack{i + 1}.mp3")
+                if os.path.isfile(path) and os.path.getsize(path) > 500:
+                    continue
+                audio = await svc.synthesize(phrase)
+                if audio:
+                    with open(path, "wb") as fh:
+                        fh.write(audio)
+                    logger.info("wake-ack clip %d rendered (%d bytes): %r", i + 1, len(audio), phrase)
+                else:
+                    logger.warning("wake-ack clip %d came back empty: %r", i + 1, phrase)
+
+        asyncio.run(_go())
+        logger.info("🔊 wake-ack clips ready: %d/%d in %s", ack_count(), len(ACK_PHRASES), ack_dir())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("wake-ack render failed (%s); tablet uses a short silent settle", exc)
+    finally:
+        with _ack_lock:
+            _acking = False
 
 
 def describe() -> str:
