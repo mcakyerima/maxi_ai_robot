@@ -176,10 +176,12 @@ def voice_config_js():
         "voskModelUrl": "/models/" + v.vosk_model_file,
         "wakePhrase": v.wake_phrase,
         "voskMinConfidence": v.vosk_min_confidence,
-        # Wake acknowledgement clips (Maxi's voice), served from the volume.
-        "wakeAckCount": model_service.ack_count(),
-        "wakeAckBase": "/acks/",
     }
+    # Wake acknowledgement clips (Maxi's voice), served from the volume. Re-check the
+    # remembered name on every load and (re)render its greeting if it changed/appeared.
+    if engine != "none":
+        model_service.ensure_name_acks_async(model_service.current_child_name())
+    cfg["wakeAckUrls"] = model_service.ack_urls_ready()
     if v.model_url:
         cfg["modelUrl"] = v.model_url
     if v.sdk_porcupine_url:
@@ -226,9 +228,11 @@ def main() -> None:
     if settings.voice.resolved_wake_engine == "vosk":
         model_service.ensure_vosk_model_async()
     logger.info("🎙️ %s", model_service.describe())
-    # Pre-render the Maxi-voice wake acknowledgements (once, to the volume).
+    # Pre-render the Maxi-voice wake acknowledgements (once, to the volume) —
+    # generic ones, plus a personalised greeting if a child name is remembered.
     if settings.voice.resolved_wake_engine != "none":
         model_service.ensure_ack_clips_async()
+        model_service.ensure_name_acks_async(model_service.current_child_name())
     start_brain_thread()
     logger.info("Maxi v2 serving on http://%s:%s", settings.server.host, settings.server.port)
 

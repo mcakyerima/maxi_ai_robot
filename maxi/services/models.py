@@ -14,6 +14,7 @@ Everything is best-effort: a failed download just leaves the tablet on push-to-t
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import threading
@@ -32,13 +33,19 @@ _seeding = False
 _ack_lock = threading.Lock()
 _acking = False
 
+_inflight: set = set()  # ack filenames currently being rendered (dedupe)
+
 # Short wake acknowledgements, spoken in Maxi's OWN voice (edge-tts). Pre-rendered
 # once on boot to the volume and served from /acks, so the tablet plays a cached
 # clip instantly (fast) instead of an off-brand browser voice.
+# NOTE: filenames are content-hashed, so editing a phrase auto-renders a new clip.
 ACK_PHRASES = [
     "Yes?", "Yeah?", "I'm here!", "Go ahead!",
-    "What's up?", "I'm listening!", "Uh huh?", "Mm-hmm?",
+    "What's up?", "I'm listening!", "Uh huh?", "Mmm hmm!",
 ]
+
+# Personalised greetings, filled with the child's remembered name when known.
+NAME_ACK_TEMPLATES = ["Hi {name}!", "Hey {name}!", "Yes {name}?"]
 
 
 def model_dir() -> str:
@@ -129,58 +136,106 @@ def ack_dir() -> str:
     return d
 
 
-def ack_count() -> int:
-    """How many wake-ack clips are rendered and non-empty."""
-    n = 0
-    for i in range(len(ACK_PHRASES)):
-        p = os.path.join(ack_dir(), f"ack{i + 1}.mp3")
-        try:
-            if os.path.isfile(p) and os.path.getsize(p) > 500:
-                n += 1
-        except OSError:
-            pass
-    return n
+def _short(text: str) -> str:
+    return hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
 
 
-def ensure_ack_clips_async() -> None:
-    """Render the wake-ack clips (Maxi's voice) to the volume once, in the
-    background. No-op if already present or a render is in flight."""
-    global _acking
-    if ack_count() >= len(ACK_PHRASES):
+def _present(filename: str) -> bool:
+    p = os.path.join(ack_dir(), filename)
+    try:
+        return os.path.isfile(p) and os.path.getsize(p) > 500
+    except OSError:
+        return False
+
+
+def _base_ack_items() -> list:
+    """(filename, text) for each generic ack. Filename is content-hashed so a phrase
+    edit produces a NEW file (auto-regenerated) instead of reusing a stale clip."""
+    return [(f"ack_{_short(p)}.mp3", p) for p in ACK_PHRASES]
+
+
+def current_child_name() -> Optional[str]:
+    """The child's remembered name, if a valid one is on file (read from the same
+    SQLite the long-term memory uses)."""
+    try:
+        from maxi.services.memory import MemoryStore, _default_db_path, _looks_like_name
+        store = MemoryStore(_default_db_path(settings.memory.db_path), settings.memory.child_id)
+        name = store.get_name()
+        store.close()
+        if name and _looks_like_name(name):
+            return name
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not read child name: %s", exc)
+    return None
+
+
+def _name_ack_items(name: str) -> list:
+    """(filename, text) for the personalised greetings for ``name``."""
+    h = _short(name.lower())
+    return [(f"name_{h}_{k}.mp3", tpl.format(name=name)) for k, tpl in enumerate(NAME_ACK_TEMPLATES)]
+
+
+def ack_urls_ready() -> list:
+    """All rendered ack clip URLs (generic + the current name's), for the tablet."""
+    urls = ["/acks/" + fn for fn, _ in _base_ack_items() if _present(fn)]
+    name = current_child_name()
+    if name:
+        urls += ["/acks/" + fn for fn, _ in _name_ack_items(name) if _present(fn)]
+    return urls
+
+
+def _ensure_async(items: list) -> None:
+    """Render any missing (filename, text) clips in the background, once."""
+    todo = [(fn, txt) for fn, txt in items if not _present(fn) and fn not in _inflight]
+    if not todo:
         return
     with _ack_lock:
-        if _acking:
-            return
-        _acking = True
-    threading.Thread(target=_render_ack_clips, name="wake-ack-render", daemon=True).start()
+        for fn, _ in todo:
+            _inflight.add(fn)
+
+    def _worker() -> None:
+        try:
+            _render_clips(todo)
+        finally:
+            with _ack_lock:
+                for fn, _ in todo:
+                    _inflight.discard(fn)
+
+    threading.Thread(target=_worker, name="wake-ack-render", daemon=True).start()
 
 
-def _render_ack_clips() -> None:
-    global _acking
+def _render_clips(items: list) -> None:
     try:
-        from maxi.services.tts import SpeechService  # local import: avoids a cycle at import time
+        from maxi.services.tts import SpeechService  # local import: avoids an import cycle
         svc = SpeechService()
 
         async def _go() -> None:
-            for i, phrase in enumerate(ACK_PHRASES):
-                path = os.path.join(ack_dir(), f"ack{i + 1}.mp3")
-                if os.path.isfile(path) and os.path.getsize(path) > 500:
+            for fn, text in items:
+                path = os.path.join(ack_dir(), fn)
+                if _present(fn):
                     continue
-                audio = await svc.synthesize(phrase)
+                audio = await svc.synthesize(text)
                 if audio:
                     with open(path, "wb") as fh:
                         fh.write(audio)
-                    logger.info("wake-ack clip %d rendered (%d bytes): %r", i + 1, len(audio), phrase)
+                    logger.info("🔊 ack clip rendered (%d bytes): %r → %s", len(audio), text, fn)
                 else:
-                    logger.warning("wake-ack clip %d came back empty: %r", i + 1, phrase)
+                    logger.warning("ack clip came back empty: %r", text)
 
         asyncio.run(_go())
-        logger.info("🔊 wake-ack clips ready: %d/%d in %s", ack_count(), len(ACK_PHRASES), ack_dir())
     except Exception as exc:  # noqa: BLE001
-        logger.warning("wake-ack render failed (%s); tablet uses a short silent settle", exc)
-    finally:
-        with _ack_lock:
-            _acking = False
+        logger.warning("ack render failed (%s); tablet uses a short silent settle", exc)
+
+
+def ensure_ack_clips_async() -> None:
+    """Render the generic wake-ack clips (Maxi's voice) to the volume, once."""
+    _ensure_async(_base_ack_items())
+
+
+def ensure_name_acks_async(name: Optional[str]) -> None:
+    """Render the personalised 'Hi {name}!' clips for the remembered child, once."""
+    if name:
+        _ensure_async(_name_ack_items(name))
 
 
 def describe() -> str:

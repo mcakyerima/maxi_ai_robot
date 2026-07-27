@@ -1065,12 +1065,11 @@
             // Preload the Maxi-voice wake-ack clips (served from the volume).
             preloadWakeAcks() {
                 const cfg = window.MAXI_VOICE_CONFIG || {};
-                const n = cfg.wakeAckCount || 0;
-                const base = cfg.wakeAckBase || '/acks/';
+                const urls = cfg.wakeAckUrls || [];
                 this._ackAudios = [];
-                for (let i = 1; i <= n; i++) {
+                for (const url of urls) {
                     try {
-                        const a = new Audio(base + 'ack' + i + '.mp3');
+                        const a = new Audio(url);
                         a.preload = 'auto';
                         this._ackAudios.push(a);
                     } catch (e) {}
