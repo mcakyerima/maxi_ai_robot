@@ -1,0 +1,14 @@
+# Python packages for Maxi's hands — install ON THE RASPBERRY PI only.
+# (The cloud brain does NOT need these; it talks to the Pi over HTTP.)
+#
+# ./start_hands.sh --setup installs these into hardware/venv for you.
+# Manual equivalent:
+#   python3 -m venv --system-site-packages venv
+#   venv/bin/pip install -r requirements_pi.txt
+
+Flask>=3.0,<4.0
+Flask-Cors>=4.0
+
+# PCA9685 servo driver over I2C. Blinka provides the `board` / `busio` modules.
+adafruit-circuitpython-pca9685>=3.4.0
+adafruit-blinka>=8.20.0

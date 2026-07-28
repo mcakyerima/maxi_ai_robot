@@ -1,84 +1,220 @@
 #!/usr/bin/env bash
-# start_hands.sh — bring Maxi's hands online on the Raspberry Pi.
+# start_hands.sh — install, start and publish Maxi's hands on the Raspberry Pi.
 #
-#   1. starts finger_controller_api.py on :5001 (the API the cloud brain calls)
-#   2. opens an outbound tunnel so Railway can reach it (no port-forwarding)
-#   3. prints the public URL + the exact Railway variables to paste
+# Put this file in the SAME folder as finger_controller_api.py (they share
+# hand_calibration.json via the current directory).
 #
-# Usage:
-#   chmod +x start_hands.sh
-#   ./start_hands.sh                 # cloudflared quick tunnel (no account)
-#   TUNNEL=ngrok ./start_hands.sh    # ngrok instead
-#   TUNNEL=none  ./start_hands.sh    # API only (LAN testing)
-#   SIMULATION_MODE=true ./start_hands.sh   # dry-run, no servos move
+# Step-by-step guide: docs/HANDS_BRINGUP.md
+#
+#   ./start_hands.sh --setup     ONE-TIME: install everything, move nothing.
+#   ./start_hands.sh             start the API on :5001 + a tunnel, print the URL.
+#
+# Options (environment variables):
+#   TUNNEL=cloudflared|ngrok|none   default cloudflared (no account needed)
+#   SIMULATION_MODE=true            dry run, servos never move
+#   PORT=5001                       the API port
 #
 # Ctrl-C stops BOTH the API and the tunnel.
 
 set -uo pipefail
+# Resolve our own path BEFORE cd'ing (--help reads this file).
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")"
 
 PORT="${PORT:-5001}"
 TUNNEL="${TUNNEL:-cloudflared}"
-PYTHON="${PYTHON:-python3}"
 LOG_DIR="${LOG_DIR:-$PWD/logs}"
+VENV="$PWD/venv"
+SETUP_MARKER="$PWD/.hands_setup_done"
 mkdir -p "$LOG_DIR"
 API_LOG="$LOG_DIR/hands_api.log"
 TUNNEL_LOG="$LOG_DIR/tunnel.log"
 
+SETUP_ONLY=0
+case "${1:-}" in
+  --setup|--setup-only|setup) SETUP_ONLY=1 ;;
+  --help|-h) sed -n '2,19p' "$SELF"; exit 0 ;;
+esac
+
+SUDO="sudo"
+[ "$(id -u)" = "0" ] && SUDO=""
+
+say()  { echo "$@"; }
+line() { echo "────────────────────────────────────────────────────────────"; }
+# The Pi's LAN address (only used in printed hints; never fatal).
+lan_ip() { hostname -I 2>/dev/null | awk '{print $1}'; }
+
+# ═══════════════════════════════════════════════════════════════════
+# SETUP — runs on the first ever launch, or on demand with --setup
+# ═══════════════════════════════════════════════════════════════════
+run_setup() {
+  line; say "🔧 ONE-TIME SETUP — installing what the hands need"; line
+
+  say "1/5  system packages (needs your password for sudo)…"
+  $SUDO apt-get update -qq
+  $SUDO apt-get install -y -qq python3-venv python3-pip python3-dev i2c-tools curl \
+    || { say "❌ apt-get install failed. Are you online?"; return 1; }
+  say "     ✅ python3-venv, i2c-tools, curl"
+
+  say "2/5  enabling the I2C bus…"
+  if command -v raspi-config >/dev/null 2>&1; then
+    $SUDO raspi-config nonint do_i2c 0 && say "     ✅ I2C enabled"
+  else
+    say "     ⚠️  raspi-config not found — enable I2C by hand if 0x40 doesn't show up."
+  fi
+
+  say "3/5  python packages (into ./venv, takes a few minutes)…"
+  [ -d "$VENV" ] || python3 -m venv --system-site-packages "$VENV" \
+    || { say "❌ could not create the venv"; return 1; }
+  "$VENV/bin/pip" install -q --upgrade pip
+  "$VENV/bin/pip" install -q -r requirements_pi.txt \
+    || { say "❌ pip install failed — see the message above."; return 1; }
+  say "     ✅ Flask + adafruit PCA9685 libraries"
+
+  say "4/5  the tunnel program…"
+  install_cloudflared
+
+  say "5/5  checking the servo board…"
+  if [ -e /dev/i2c-1 ]; then
+    if i2cdetect -y 1 2>/dev/null | grep -qi " 40"; then
+      say "     ✅ PCA9685 found at 0x40"
+    else
+      say "     ⚠️  /dev/i2c-1 exists but NOTHING answers at 0x40."
+      say "        Check SDA→GPIO2, SCL→GPIO3, VCC→3V3, and the COMMON GROUND."
+    fi
+  else
+    say "     ⚠️  /dev/i2c-1 does not exist yet — I2C needs a REBOOT to switch on."
+    say "        Run:  sudo reboot     then run this script again."
+  fi
+
+  touch "$SETUP_MARKER"
+  line
+  say "✅ SETUP DONE."
+  say ""
+  say "   NEXT: calibrate the fingers before anything moves on its own —"
+  say "     $VENV/bin/python finger_callibrator.py     → http://$(lan_ip):5000"
+  say "   Then come back and run:  ./start_hands.sh"
+  line
+}
+
+install_cloudflared() {
+  if command -v cloudflared >/dev/null 2>&1; then
+    say "     ✅ cloudflared already installed"
+    return 0
+  fi
+  if [ "$TUNNEL" = "ngrok" ] || [ "$TUNNEL" = "none" ]; then
+    say "     ⏭  skipped (TUNNEL=$TUNNEL)"
+    return 0
+  fi
+  local arch deb
+  case "$(uname -m)" in
+    aarch64|arm64)   arch="arm64" ;;
+    armv7l|armv6l)   arch="arm"   ;;
+    x86_64)          arch="amd64" ;;
+    *) say "     ⚠️  unknown CPU $(uname -m) — install cloudflared by hand."; return 0 ;;
+  esac
+  deb="/tmp/cloudflared.deb"
+  say "     downloading cloudflared ($arch)…"
+  if curl -fsSL -o "$deb" \
+      "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}.deb"; then
+    $SUDO dpkg -i "$deb" >/dev/null 2>&1 && say "     ✅ cloudflared installed" \
+      || say "     ⚠️  dpkg failed — try: sudo dpkg -i $deb"
+  else
+    say "     ⚠️  download failed (no internet?). Install it later, or use TUNNEL=ngrok."
+  fi
+}
+
+if [ "$SETUP_ONLY" = "1" ]; then
+  run_setup
+  exit $?
+fi
+if [ ! -f "$SETUP_MARKER" ]; then
+  say "ℹ️  First run detected — doing the one-time setup first."
+  run_setup || exit 1
+  say ""
+  say "⏸  Setup finished. Calibrate first (see above), then run ./start_hands.sh again."
+  exit 0
+fi
+
+# Prefer the venv we built; fall back to system python.
+PYTHON="${PYTHON:-}"
+if [ -z "$PYTHON" ]; then
+  if [ -x "$VENV/bin/python" ]; then PYTHON="$VENV/bin/python"; else PYTHON="python3"; fi
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# RUN
+# ═══════════════════════════════════════════════════════════════════
+
 # --- API key -----------------------------------------------------------------
 # Must match Railway's MAXI_HAND_API_KEY EXACTLY or the brain gets a 401 and
-# silently falls back to simulation. Put it in ~/.maxi_hands.env to persist:
+# silently falls back to simulation. Persist it in ~/.maxi_hands.env:
 #   echo 'export MAXI_HAND_API_KEY="....."' >> ~/.maxi_hands.env
 [ -f "$HOME/.maxi_hands.env" ] && . "$HOME/.maxi_hands.env"
 if [ -z "${MAXI_HAND_API_KEY:-}" ]; then
-  echo "⚠️  MAXI_HAND_API_KEY is not set — the API will use its built-in default key."
-  echo "    That still works, but set a real one on BOTH the Pi and Railway."
+  say "⚠️  MAXI_HAND_API_KEY is not set — the API will use its built-in default key."
+  say "    That still works, but set a real one on BOTH the Pi and Railway."
 fi
 export MAXI_HAND_API_KEY
 
-API_PID=""; TUNNEL_PID=""
+API_PID=""; TUNNEL_PID=""; CLEANED=0
 cleanup() {
+  [ "$CLEANED" = "1" ] && return          # TERM then EXIT would fire this twice
+  CLEANED=1
+  trap - EXIT INT TERM
   echo ""
-  echo "🛑 stopping…"
+  say "🛑 stopping…"
   [ -n "$TUNNEL_PID" ] && kill "$TUNNEL_PID" 2>/dev/null
   [ -n "$API_PID" ] && kill "$API_PID" 2>/dev/null
   wait 2>/dev/null
-  echo "👋 hands offline."
+  say "👋 hands offline."
 }
 trap cleanup EXIT INT TERM
 
-# --- 0. sanity: I2C + the PCA9685 -------------------------------------------
-if [ "${SIMULATION_MODE:-false}" != "true" ]; then
-  if command -v i2cdetect >/dev/null 2>&1; then
-    if i2cdetect -y 1 2>/dev/null | grep -qi " 40"; then
-      echo "✅ PCA9685 found on I2C bus 1 at 0x40"
-    else
-      echo "❌ PCA9685 NOT found at 0x40 on i2c-1."
-      echo "   Check: SDA/SCL wiring, common ground, and 'sudo raspi-config' → Interface → I2C."
-      echo "   Continuing anyway — the API will report degraded health."
-    fi
+# --- 0. sanity checks --------------------------------------------------------
+if [ ! -f hand_calibration.json ]; then
+  say "⚠️  No hand_calibration.json in $PWD — the API will use DEFAULT finger ranges."
+  say "    Fingers may push into their stops (servos get hot). Calibrate first:"
+  say "      $PYTHON finger_callibrator.py    → http://$(lan_ip):5000"
+  if [ -t 0 ]; then
+    printf "    Continue anyway? [y/N] "
+    read -r reply
+    case "$reply" in y|Y) ;; *) exit 1 ;; esac
   else
-    echo "ℹ️  i2cdetect not installed (sudo apt install -y i2c-tools) — skipping I2C check."
+    say "    (no terminal to ask — continuing with defaults)"
   fi
 fi
 
-# --- 1. the finger API -------------------------------------------------------
-if lsof -ti :"$PORT" >/dev/null 2>&1 || (command -v ss >/dev/null && ss -ltn "sport = :$PORT" | grep -q LISTEN); then
-  echo "❌ Port $PORT is already in use — another controller is running."
-  echo "   Stop it first:  pkill -f finger_controller_api.py"
+if [ "${SIMULATION_MODE:-false}" != "true" ]; then
+  if command -v i2cdetect >/dev/null 2>&1; then
+    if i2cdetect -y 1 2>/dev/null | grep -qi " 40"; then
+      say "✅ PCA9685 found on I2C bus 1 at 0x40"
+    else
+      say "❌ PCA9685 NOT found at 0x40 on i2c-1."
+      say "   Check SDA/SCL wiring, the COMMON GROUND, and that I2C is on"
+      say "   (sudo raspi-config → Interface → I2C, then reboot)."
+      say "   Continuing anyway — the API will report degraded health."
+    fi
+  fi
+fi
+
+if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ":$PORT "; then
+  say "❌ Port $PORT is already in use — a controller is already running."
+  say "   Stop it first:  pkill -f finger_controller_api.py"
   exit 1
 fi
 
-echo "🤖 starting finger_controller_api.py on :$PORT …"
-echo "   ⚠️  SERVOS WILL MOVE ON BOOT (closes all fingers, then a '2' self-test)."
+# --- 1. the finger API -------------------------------------------------------
+say "🤖 starting finger_controller_api.py on :$PORT …"
+say "   ⚠️  SERVOS WILL MOVE NOW (closes all fingers, then a '2' self-test)."
 "$PYTHON" finger_controller_api.py >"$API_LOG" 2>&1 &
 API_PID=$!
 
-# Wait for /health to answer (boot does a servo self-test, so give it time).
+# Wait for /health (boot includes a servo self-test, so give it time).
 for i in $(seq 1 30); do
-  if curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1; then break; fi
+  curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1 && break
   if ! kill -0 "$API_PID" 2>/dev/null; then
-    echo "❌ the API died on startup. Last lines of $API_LOG:"
+    say "❌ the API died on startup. Last lines of $API_LOG:"
     tail -20 "$API_LOG"
     exit 1
   fi
@@ -86,17 +222,17 @@ for i in $(seq 1 30); do
 done
 
 if ! curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1; then
-  echo "❌ /health never came up. See $API_LOG"
+  say "❌ /health never came up. See $API_LOG"
   exit 1
 fi
-echo "✅ API healthy:  $(curl -s "http://localhost:$PORT/health")"
+say "✅ API healthy:  $(curl -s "http://localhost:$PORT/health")"
 
 if [ "$TUNNEL" = "none" ]; then
-  IP=$(hostname -I | awk '{print $1}')
-  echo ""
-  echo "🔌 LAN only (TUNNEL=none).  http://$IP:$PORT"
-  echo "   NOTE: Railway CANNOT reach a LAN address — use a tunnel for the cloud brain."
-  echo "   Ctrl-C to stop."
+  IP=$(lan_ip)
+  say ""
+  say "🔌 LAN only (TUNNEL=none).  http://$IP:$PORT"
+  say "   NOTE: Railway CANNOT reach a LAN address — use a tunnel for the cloud brain."
+  say "   Ctrl-C to stop."
   wait "$API_PID"
   exit 0
 fi
@@ -105,13 +241,11 @@ fi
 PUBLIC_URL=""
 if [ "$TUNNEL" = "cloudflared" ]; then
   if ! command -v cloudflared >/dev/null 2>&1; then
-    echo "❌ cloudflared not installed. On Raspberry Pi OS (64-bit):"
-    echo "   curl -L -o cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb"
-    echo "   sudo dpkg -i cloudflared.deb"
-    echo "   (32-bit OS: use cloudflared-linux-arm.deb)   Or run:  TUNNEL=ngrok ./start_hands.sh"
+    say "❌ cloudflared not installed. Run:  ./start_hands.sh --setup"
+    say "   (or use the alternative:  TUNNEL=ngrok ./start_hands.sh)"
     exit 1
   fi
-  echo "🌍 opening cloudflared quick tunnel → localhost:$PORT …"
+  say "🌍 opening cloudflared quick tunnel → localhost:$PORT …"
   cloudflared tunnel --url "http://localhost:$PORT" >"$TUNNEL_LOG" 2>&1 &
   TUNNEL_PID=$!
   for i in $(seq 1 30); do
@@ -121,10 +255,10 @@ if [ "$TUNNEL" = "cloudflared" ]; then
   done
 elif [ "$TUNNEL" = "ngrok" ]; then
   if ! command -v ngrok >/dev/null 2>&1; then
-    echo "❌ ngrok not installed.  https://ngrok.com/download   (needs a free authtoken)"
+    say "❌ ngrok not installed.  https://ngrok.com/download   (needs a free authtoken)"
     exit 1
   fi
-  echo "🌍 opening ngrok tunnel → localhost:$PORT …"
+  say "🌍 opening ngrok tunnel → localhost:$PORT …"
   ngrok http "$PORT" --log=stdout >"$TUNNEL_LOG" 2>&1 &
   TUNNEL_PID=$!
   for i in $(seq 1 30); do
@@ -134,22 +268,22 @@ elif [ "$TUNNEL" = "ngrok" ]; then
     sleep 1
   done
 else
-  echo "❌ unknown TUNNEL='$TUNNEL' (use cloudflared | ngrok | none)"
+  say "❌ unknown TUNNEL='$TUNNEL' (use cloudflared | ngrok | none)"
   exit 1
 fi
 
 if [ -z "$PUBLIC_URL" ]; then
-  echo "❌ the tunnel did not report a public URL. See $TUNNEL_LOG"
+  say "❌ the tunnel did not report a public URL. See $TUNNEL_LOG"
   exit 1
 fi
 
 # --- 3. verify end-to-end through the tunnel ---------------------------------
-echo ""
-echo "🔎 checking the public URL…"
+say ""
+say "🔎 checking the public URL…"
 if curl -sf --max-time 15 "$PUBLIC_URL/health" >/dev/null 2>&1; then
-  echo "✅ $PUBLIC_URL/health  →  $(curl -s --max-time 15 "$PUBLIC_URL/health")"
+  say "✅ $PUBLIC_URL/health  →  $(curl -s --max-time 15 "$PUBLIC_URL/health")"
 else
-  echo "⚠️  $PUBLIC_URL/health did not answer yet (tunnels take a few seconds)."
+  say "⚠️  $PUBLIC_URL/health did not answer yet (tunnels take a few seconds)."
 fi
 
 cat <<EOF
@@ -165,7 +299,7 @@ cat <<EOF
    MAXI_HAND_API_KEY=${MAXI_HAND_API_KEY:-<the key this Pi is using>}
 
  Then confirm from any browser:
-   https://<your-railway-app>/hands/status?probe=1   → "mode":"hardware"
+   https://<your-railway-app>/hands/status?probe=1     → "mode":"hardware"
    https://<your-railway-app>/hands/test?pin=1234&n=3  → 3 fingers move
 
  Logs:  $API_LOG
@@ -175,5 +309,5 @@ cat <<EOF
 ════════════════════════════════════════════════════════════════════
 EOF
 
-# A quick-tunnel URL changes on every restart — keep this shell open for the demo.
+# A quick-tunnel URL changes on every restart — keep this window open for the demo.
 wait "$API_PID"

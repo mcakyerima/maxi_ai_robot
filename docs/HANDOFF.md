@@ -27,8 +27,10 @@ the Claude memory files (read those + this):
   root, 16 slides, sibling design system, verified via PNG export. Has a fill-in HARDWARE BOM +
   placeholder names. See [[maxi-presentation]].
 - **Hands bring-up tooling (SHIPPED, awaiting the live hardware pass):** everything needed to
-  connect the physical hands — see **`docs/HANDS_BRINGUP.md`** (wiring → calibrate → tunnel →
-  Railway → live test → troubleshooting table → printable pre-flight checklist). Details in §9d.
+  connect the physical hands — see **`docs/HANDS_BRINGUP.md`**, a numbered STEP 1–20 runbook
+  the user + children follow on the day (wiring → copy files to the Pi → one-command install →
+  calibrate → tunnel → Railway → live test), plus a troubleshooting table and a printable
+  tear-off checklist. Details in §9d.
 - **PENDING / NEXT:** the actual **live hardware pass** — run `hardware/start_hands.sh` on the Pi,
   `tools/check_hands.py` from the laptop, set Railway `RASPBERRY_PI_URL` + `MAXI_HAND_API_KEY`,
   confirm `/hands/status` says `"mode":"hardware"`, then "Hey Maxi, what is 3 plus 2" → fingers
@@ -280,10 +282,14 @@ demo-day conditions and be verifiable without reading Railway logs.
   `/hands/status[?probe=1]` → `{"mode":"hardware"|"simulation …","last_error":…}` (never
   leaks the API key) and `/hands/test?pin=<PARENT_DASHBOARD_PIN>&n=3` → moves real fingers
   without the tablet. Backed by a new `Transport.run_coro()` (Flask thread → brain loop).
-- **`hardware/start_hands.sh`** (NEW, for the Pi): checks `i2cdetect` for 0x40, starts the
-  API on :5001, waits for `/health`, opens a **cloudflared quick tunnel** (`TUNNEL=ngrok`
-  or `none` also supported), verifies the public URL, and prints the exact Railway vars.
-  Ctrl-C stops both. Logs to `hardware/logs/`.
+- **`hardware/start_hands.sh`** (NEW, for the Pi) — two modes:
+  `--setup` does the whole ONE-TIME install (apt packages, `raspi-config nonint do_i2c 0`,
+  a `hardware/venv` from the new `requirements_pi.txt`, arch-correct `cloudflared` .deb) and
+  moves nothing; with no argument it checks `i2cdetect` for 0x40, warns if
+  `hand_calibration.json` is missing, starts the API on :5001, waits for `/health`, opens a
+  **cloudflared quick tunnel** (`TUNNEL=ngrok|none` too), verifies the public URL, and
+  prints the exact Railway vars. First run auto-runs setup then stops so you calibrate
+  before anything moves. Ctrl-C stops both. Logs to `hardware/logs/`.
 - **`tools/check_hands.py`** (NEW, stdlib only): pre-flights the tunnel from the laptop the
   same way the brain does — `/health`, key check via `/status`, warns on degraded hardware /
   unsaved calibration / latched e-stop, `--move` counts 3→5→0, and flags moves slower than
