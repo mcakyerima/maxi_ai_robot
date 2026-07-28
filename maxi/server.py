@@ -19,7 +19,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from flask import Flask, jsonify, make_response, render_template, send_from_directory
+from flask import Flask, jsonify, make_response, render_template, request, send_from_directory
 from flask_socketio import SocketIO
 
 from maxi.config import settings
@@ -193,6 +193,50 @@ def voice_config_js():
     resp.headers["Content-Type"] = "application/javascript; charset=utf-8"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
+
+
+# --- hands diagnostics -------------------------------------------------------
+# Pre-flight from any phone browser, so nobody has to read Railway logs on demo
+# day: /hands/status tells you sim vs hardware, /hands/test moves real fingers.
+def _hands():
+    if _orchestrator is None or getattr(_orchestrator, "hands", None) is None:
+        return None
+    return _orchestrator.hands
+
+
+@app.route("/hands/status")
+def hands_status():
+    hands = _hands()
+    if hands is None:
+        return jsonify({"status": "error", "message": "brain not ready"}), 503
+    try:
+        # ?probe=1 re-checks the Pi right now instead of using the cached state.
+        if request.args.get("probe"):
+            transport.run_coro(hands.probe(), timeout=15.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("hands probe failed: %s", exc)
+    return jsonify({"status": "success", "hands": hands.status()})
+
+
+@app.route("/hands/test")
+def hands_test():
+    """Show a number on the real hand. Guarded by the parent PIN."""
+    if request.args.get("pin", "") != settings.server.parent_pin:
+        return jsonify({"status": "error", "message": "invalid pin"}), 401
+    hands = _hands()
+    if hands is None:
+        return jsonify({"status": "error", "message": "brain not ready"}), 503
+    try:
+        number = max(0, min(10, int(request.args.get("n", 3))))
+    except ValueError:
+        number = 3
+    hand = "left" if request.args.get("hand") == "left" else "right"
+    try:
+        ok = transport.run_coro(hands.show_number(number, hand), timeout=20.0)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"status": "error", "message": str(exc)}), 500
+    return jsonify({"status": "success", "moved": bool(ok), "number": number,
+                    "hand": hand, "hands": hands.status()})
 
 
 @app.route("/set_mode/<mode>")

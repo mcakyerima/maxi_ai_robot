@@ -26,9 +26,13 @@ the Claude memory files (read those + this):
 - **Presentation (NOT committed):** `build_presentation.py` → `Maxi_Robot_Presentation.pptx` in
   root, 16 slides, sibling design system, verified via PNG export. Has a fill-in HARDWARE BOM +
   placeholder names. See [[maxi-presentation]].
-- **PENDING / NEXT:** connect the **physical hands + tunnel** for a live test — MG996R servos +
-  PCA9685, cloudflared/ngrok tunnel → Railway `RASPBERRY_PI_URL` + `MAXI_HAND_API_KEY`. Full
-  guide in [[maxi-hands-hardware]]. Aug-4-2026 demo → favor reliability ([[maxi-presentation-deadline]]).
+- **Hands bring-up tooling (SHIPPED, awaiting the live hardware pass):** everything needed to
+  connect the physical hands — see **`docs/HANDS_BRINGUP.md`** (wiring → calibrate → tunnel →
+  Railway → live test → troubleshooting table → printable pre-flight checklist). Details in §9d.
+- **PENDING / NEXT:** the actual **live hardware pass** — run `hardware/start_hands.sh` on the Pi,
+  `tools/check_hands.py` from the laptop, set Railway `RASPBERRY_PI_URL` + `MAXI_HAND_API_KEY`,
+  confirm `/hands/status` says `"mode":"hardware"`, then "Hey Maxi, what is 3 plus 2" → fingers
+  move. Aug-4-2026 demo → favor reliability ([[maxi-presentation-deadline]]).
 
 ---
 
@@ -262,10 +266,45 @@ live-testable once a (free) Picovoice AccessKey is set.
 
 ---
 
+## 9d. Just built (this session): hands bring-up — self-healing link to the Pi
+Full guide: **`docs/HANDS_BRINGUP.md`**. The goal was to make the cloud→Pi link survive
+demo-day conditions and be verifiable without reading Railway logs.
+- **The bug this fixes:** `HandsActuator.initialize()` probed the Pi exactly ONCE at brain
+  boot. Railway almost always boots before the Pi's tunnel exists → `available=False`
+  forever → silent simulation until someone redeployed. Free quick-tunnels also restart.
+- **`maxi/actuators/hands.py` now re-probes lazily** (`_ensure_available`, 20 s cooldown;
+  120 s after a 401). A dead tunnel's own **HTTP 5xx error page** now counts as "Pi gone"
+  too (it isn't a connection error, so it used to look like a valid reply). Recovery needs
+  no redeploy. Adds `probe()`, `status()`, and `last_error`.
+- **Two diagnostic routes** (`maxi/server.py`), usable from any phone browser:
+  `/hands/status[?probe=1]` → `{"mode":"hardware"|"simulation …","last_error":…}` (never
+  leaks the API key) and `/hands/test?pin=<PARENT_DASHBOARD_PIN>&n=3` → moves real fingers
+  without the tablet. Backed by a new `Transport.run_coro()` (Flask thread → brain loop).
+- **`hardware/start_hands.sh`** (NEW, for the Pi): checks `i2cdetect` for 0x40, starts the
+  API on :5001, waits for `/health`, opens a **cloudflared quick tunnel** (`TUNNEL=ngrok`
+  or `none` also supported), verifies the public URL, and prints the exact Railway vars.
+  Ctrl-C stops both. Logs to `hardware/logs/`.
+- **`tools/check_hands.py`** (NEW, stdlib only): pre-flights the tunnel from the laptop the
+  same way the brain does — `/health`, key check via `/status`, warns on degraded hardware /
+  unsaved calibration / latched e-stop, `--move` counts 3→5→0, and flags moves slower than
+  `HANDS_TIMEOUT`.
+- **Pi bug fixed** in `hardware/finger_controller_api.py`: `make_fist`/`make_peace`/`wave`/
+  `count_to_ten` were defined INSIDE the `/gesture` route body (dead code after its
+  `return`), so the lambda shim hit `AttributeError` → every `/gesture` call 500'd. They're
+  real class methods now. ⚠️ **This file must be re-copied to the Pi.** (The math/finger
+  path — `/show_number`, `/move_finger` — was never affected.)
+- **Verified:** `tests/test_hands_reconnect.py` → **28/28** against a fake Pi on a real
+  socket (boot-then-appear, mid-session tunnel drop + recovery, 401 handling, forced sim,
+  no key leakage); the new routes exercised end-to-end on the real Flask app; full existing
+  suite still passes. **NOT yet verified on real servos** — that's the live pass.
+
+---
+
 ## 10. Roadmap (priority order) — pick up here
 **Tier 1 — finish/validate**
 1. ✅ Step-by-step math (just done — verify on device).
 2. **Real hardware test pass** (Pi hands + tablet mic) and tune thresholds. BIGGEST gap.
+   Tooling + guide are now ready (§9d, `docs/HANDS_BRINGUP.md`); only the live run remains.
 3. ✅ **True hands-free "Hey Maxi" (beepless)** — DONE this session via a pluggable
    `wakeProvider` + Porcupine Web (`porcupine_wake.js`). See §9c + `docs/WAKEWORD.md`.
    Remaining polish: train the custom "Hey Maxi" WASM `.ppn` (built-in "Computer" for

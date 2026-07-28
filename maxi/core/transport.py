@@ -51,3 +51,14 @@ class Transport:
 
     async def next_message(self) -> Dict[str, Any]:
         return await self.inbound.get()
+
+    # -- request/response (Flask thread → async loop → result) ---------------
+    def run_coro(self, coro: Any, timeout: float = 15.0) -> Any:
+        """Run a coroutine on the brain loop from a Flask thread and wait for it.
+
+        Only for small diagnostic calls (see /hands/*) — never from the brain
+        loop itself, and never for anything that could block a turn.
+        """
+        if not self.loop:
+            raise RuntimeError("brain loop not bound yet")
+        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)

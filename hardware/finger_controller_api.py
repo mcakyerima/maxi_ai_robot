@@ -664,6 +664,93 @@ class EnhancedFingerControllerAPI:
             print(f"❌ Max preset error: {e}")
             return False
 
+    # GESTURE FUNCTIONS
+    def make_fist(self, hand: str) -> bool:
+        """Close all fingers to make a fist."""
+        try:
+            print(f"👊 Making fist with {hand} hand")
+            fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
+            success = True
+
+            for finger in fingers:
+                finger_success = self.move_finger_smooth(
+                    hand, finger, "closed", 150)
+                success &= finger_success
+                time.sleep(0.1)
+
+            return success
+        except Exception as e:
+            print(f"❌ Fist gesture error: {e}")
+            return False
+
+    def make_peace(self, hand: str) -> bool:
+        """Make peace sign (index and middle finger up)."""
+        try:
+            print(f"✌️ Making peace sign with {hand} hand")
+
+            # First close all fingers
+            fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
+            for finger in fingers:
+                self.move_finger_smooth(hand, finger, "closed", 100)
+                time.sleep(0.05)
+
+            time.sleep(0.3)
+
+            # Open index and majeure
+            success = True
+            success &= self.move_finger_smooth(hand, "index", "open", 200)
+            time.sleep(0.1)
+            success &= self.move_finger_smooth(hand, "majeure", "open", 200)
+
+            return success
+        except Exception as e:
+            print(f"❌ Peace gesture error: {e}")
+            return False
+
+    def wave(self, hand: str) -> bool:
+        """Perform waving gesture."""
+        try:
+            print(f"👋 Waving with {hand} hand")
+
+            # Open all fingers first
+            fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
+            for finger in fingers:
+                self.move_finger_smooth(hand, finger, "open", 150)
+                time.sleep(0.05)
+
+            # Wave with wrist if available
+            if "wrist" in SERVO_CHANNELS[hand]:
+                wrist_center = 80
+                for _ in range(3):  # 3 waves
+                    self.move_joint_to_angle(hand, "wrist", wrist_center - 20)
+                    time.sleep(0.3)
+                    self.move_joint_to_angle(hand, "wrist", wrist_center + 20)
+                    time.sleep(0.3)
+
+                # Return to center
+                self.move_joint_to_angle(hand, "wrist", wrist_center)
+
+            return True
+        except Exception as e:
+            print(f"❌ Wave gesture error: {e}")
+            return False
+
+    def count_to_ten(self, hand: str) -> bool:
+        """Perform counting gesture from 1 to 5."""
+        try:
+            print(f"🔢 Counting 1-5 with {hand} hand")
+
+            for i in range(6):  # 0 to 5
+                success = self.show_number_on_hand(hand, i, 200)
+                if not success:
+                    return False
+                time.sleep(1)  # Hold each number
+
+            return True
+        except Exception as e:
+            print(f"❌ Count gesture error: {e}")
+            return False
+
 
 # Initialize enhanced controller instance
 controller = EnhancedFingerControllerAPI()
@@ -1016,101 +1103,6 @@ def gesture():
         print(f"❌ {error_msg}")
         return jsonify({"success": False, "error": error_msg}), 500
 
-    def make_fist(self, hand: str) -> bool:
-        """Close all fingers to make a fist."""
-        try:
-            print(f"👊 Making fist with {hand} hand")
-            fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
-            success = True
-
-            for finger in fingers:
-                finger_success = self.move_finger_smooth(
-                    hand, finger, "closed", 150)
-                success &= finger_success
-                time.sleep(0.1)
-
-            return success
-        except Exception as e:
-            print(f"❌ Fist gesture error: {e}")
-            return False
-
-    def make_peace(self, hand: str) -> bool:
-        """Make peace sign (index and middle finger up)."""
-        try:
-            print(f"✌️ Making peace sign with {hand} hand")
-
-            # First close all fingers
-            fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
-            for finger in fingers:
-                self.move_finger_smooth(hand, finger, "closed", 100)
-                time.sleep(0.05)
-
-            time.sleep(0.3)
-
-            # Open index and majeure
-            success = True
-            success &= self.move_finger_smooth(hand, "index", "open", 200)
-            time.sleep(0.1)
-            success &= self.move_finger_smooth(hand, "majeure", "open", 200)
-
-            return success
-        except Exception as e:
-            print(f"❌ Peace gesture error: {e}")
-            return False
-
-    def wave(self, hand: str) -> bool:
-        """Perform waving gesture."""
-        try:
-            print(f"👋 Waving with {hand} hand")
-
-            # Open all fingers first
-            fingers = ["thumb", "index", "majeure", "ringfinger", "pinky"]
-            for finger in fingers:
-                self.move_finger_smooth(hand, finger, "open", 150)
-                time.sleep(0.05)
-
-            # Wave with wrist if available
-            if "wrist" in SERVO_CHANNELS[hand]:
-                wrist_center = 80
-                for _ in range(3):  # 3 waves
-                    self.move_joint_to_angle(hand, "wrist", wrist_center - 20)
-                    time.sleep(0.3)
-                    self.move_joint_to_angle(hand, "wrist", wrist_center + 20)
-                    time.sleep(0.3)
-
-                # Return to center
-                self.move_joint_to_angle(hand, "wrist", wrist_center)
-
-            return True
-        except Exception as e:
-            print(f"❌ Wave gesture error: {e}")
-            return False
-
-    def count_to_ten(self, hand: str) -> bool:
-        """Perform counting gesture from 1 to 5."""
-        try:
-            print(f"🔢 Counting 1-5 with {hand} hand")
-
-            for i in range(6):  # 0 to 5
-                success = self.show_number_on_hand(hand, i, 200)
-                if not success:
-                    return False
-                time.sleep(1)  # Hold each number
-
-            return True
-        except Exception as e:
-            print(f"❌ Count gesture error: {e}")
-            return False
-
-
-# Add gesture methods to controller class
-controller.make_fist = lambda hand: controller.__class__.make_fist(
-    controller, hand)
-controller.make_peace = lambda hand: controller.__class__.make_peace(
-    controller, hand)
-controller.wave = lambda hand: controller.__class__.wave(controller, hand)
-controller.count_to_ten = lambda hand: controller.__class__.count_to_ten(
-    controller, hand)
 
 # --- Enhanced Initialization ---
 
