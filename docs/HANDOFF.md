@@ -6,6 +6,32 @@ dir also carry the key facts.
 
 ---
 
+## 0. Latest session (2026-07-28) — what changed since §9
+All pushed to `main` and deployed on Railway (verified) UNLESS noted. Details live in
+the Claude memory files (read those + this):
+- **Long-term memory (SHIPPED, live):** `PersistentMemory` (SQLite facts/topics + rolling
+  summary, no heavy deps). On Railway it needs a **Volume** at `/data` + `MAXI_MEMORY_DB=
+  /data/maxi_memory.db` (else the ephemeral disk wipes it). See §9b + [[maxi-longterm-memory]].
+- **Hands-free "Hey Maxi" (SHIPPED):** pluggable `wakeProvider` in `maxi_voice_engine.js`.
+  Picovoice/Porcupine went sales-gated → default is **Vosk** (no account), model + **Maxi-voice
+  wake-ack clips** hosted on the Railway volume (`maxi/services/models.py`), served `/models`,
+  `/acks`. Wake is beepless; CAPTURE uses webkitSpeechRecognition (one beep). `MAXI_WAKE_ENGINE=
+  auto`. See [[maxi-hands-free-wakeword]].
+- **Mic/UX fixes (SHIPPED):** cross-turn mic-contention fix (serialized Vosk mic), name-bug fix
+  ("Coming"), spelling via say_as + the `B! A! N!` hack, robot-face **emotions** (chat face +
+  math emoji badge), **Maxi's head** = tap→random animation / hold-3s→refresh-reset, **/settings
+  + in-page Wake-Word toggle** (buttons-only fallback for the demo). See [[maxi-skills-extras]],
+  [[maxi-head-reset]].
+- **New skills (SHIPPED):** time/date, storytelling, spelling, quizzes (intent-based in ChatSkill).
+- **Presentation (NOT committed):** `build_presentation.py` → `Maxi_Robot_Presentation.pptx` in
+  root, 16 slides, sibling design system, verified via PNG export. Has a fill-in HARDWARE BOM +
+  placeholder names. See [[maxi-presentation]].
+- **PENDING / NEXT:** connect the **physical hands + tunnel** for a live test — MG996R servos +
+  PCA9685, cloudflared/ngrok tunnel → Railway `RASPBERRY_PI_URL` + `MAXI_HAND_API_KEY`. Full
+  guide in [[maxi-hands-hardware]]. Aug-4-2026 demo → favor reliability ([[maxi-presentation-deadline]]).
+
+---
+
 ## 1. What Maxi is
 An AI educational robot that tutors Nigerian children (ages 6–12), built at Maxeeton
 Technology by Mohammed Kaka. It talks, listens, can be interrupted, and moves 10
