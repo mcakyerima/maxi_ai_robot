@@ -338,6 +338,8 @@ Or just pull the servo power. To recover afterwards, restart `./start_hands.sh`.
 | Worked, then stopped mid-demo | the tunnel restarted → new URL | redo Steps 12 and 14 |
 | Commands time out | moves take longer than 8 s | set `HANDS_TIMEOUT=15` on Railway |
 | `Port 5001 already in use` | it's already running | `pkill -f finger_controller_api.py` |
+| `$'\r': command not found` | the file was copied from Windows with Windows line endings | `sed -i 's/\r$//' start_hands.sh` |
+| `Permission denied` running the script | not marked runnable | `chmod +x start_hands.sh` |
 
 ### Every day after the first time
 Steps 12 → 14 → 15 only. About 3 minutes:

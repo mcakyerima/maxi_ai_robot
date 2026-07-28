@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings even in a Windows working copy.
+# Otherwise scp'ing start_hands.sh to the Raspberry Pi gives:
+#   ./start_hands.sh: line 2: $'\r': command not found
+*.sh text eol=lf
