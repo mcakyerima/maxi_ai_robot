@@ -44,33 +44,26 @@ SPELL_WORDS = [
     "mango", "water", "house", "school", "friend", "yellow", "orange", "banana",
 ]
 
-# Our voice agent (edge-tts) can't take SSML, and reads "C - A - T" as garble.
-# So we spell with the LETTER SOUNDS as plain words — how Alexa/Google actually
-# spell — which the TTS pronounces clearly. (British "zed" for a Nigerian child.)
-LETTER_SOUNDS = {
-    "a": "ay", "b": "bee", "c": "see", "d": "dee", "e": "ee", "f": "ef",
-    "g": "gee", "h": "aitch", "i": "eye", "j": "jay", "k": "kay", "l": "el",
-    "m": "em", "n": "en", "o": "oh", "p": "pee", "q": "cue", "r": "arr",
-    "s": "ess", "t": "tee", "u": "you", "v": "vee", "w": "double-you",
-    "x": "eks", "y": "why", "z": "zed",
-}
-
-
-def spell_sounds(word: str) -> str:
-    """Letter sounds for SPEECH. A '!' after each makes the TTS pause between
-    letters (edge-tts treats ! as a sentence break) so it doesn't rush them."""
-    return " ".join(LETTER_SOUNDS.get(ch, ch) + "!" for ch in word.lower() if ch.isalpha())
+# Our voice agent (edge-tts) can't take SSML. The reliable hack (found in the MS
+# voice sandbox): SPELL with the CAPITAL letters and a "!" after each one EXCEPT the
+# last, space-separated — e.g. "B! A! N! A! N! A". The "!" forces the TTS to say each
+# letter as its own natural, well-paced letter name instead of running them together.
+def spell_spoken(word: str) -> str:
+    letters = [ch.upper() for ch in word if ch.isalpha()]
+    if not letters:
+        return ""
+    return " ".join([c + "!" for c in letters[:-1]] + [letters[-1]])
 
 
 def spell_letters(word: str) -> str:
-    """Real letters for the UI / transcript (the child SEES C - A - T)."""
+    """Real letters for the UI / transcript (the child SEES B - A - N - A - N - A)."""
     return " - ".join(ch.upper() for ch in word if ch.isalpha())
 
 
 def spell_word_reply(word: str):
-    """Return (spoken, display): SPEAK the letter sounds, SHOW the real letters."""
+    """Return (spoken, display): SPEAK the letter hack, SHOW the clean letters."""
     w = word.strip().lower()
-    spoken = f"{w.capitalize()} is spelled... {spell_sounds(w)} {w.capitalize()}!"
+    spoken = f"{w.capitalize()} is spelled. {spell_spoken(w)}. {w.capitalize()}!"
     display = f"{w.capitalize()} is spelled {spell_letters(w)}. {w.capitalize()}!"
     return spoken, display
 
@@ -78,7 +71,7 @@ def spell_word_reply(word: str):
 def spell_game_reply(index: int):
     """A teaching-style spelling prompt. Returns (spoken, display)."""
     word = SPELL_WORDS[index % len(SPELL_WORDS)]
-    spoken = (f"Let's spell {word.capitalize()}! {spell_sounds(word)} "
+    spoken = (f"Let's spell {word.capitalize()}. {spell_spoken(word)}. "
               f"{word.capitalize()}! Now you try it!")
     display = (f"Let's spell {word.capitalize()}! It goes {spell_letters(word)}. "
                f"{word.capitalize()}! Now you try it!")

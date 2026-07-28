@@ -835,6 +835,18 @@
       @keyframes poke-jump   { 0%,100%{transform:translateY(0) scale(1)} 40%{transform:translateY(-32px) scale(1.06)} }
       @keyframes poke-tilt   { 0%,100%{transform:rotate(0)} 50%{transform:rotate(22deg)} }
       @keyframes poke-dizzy  { 0%{transform:rotate(0)} 25%{transform:rotate(18deg) scale(1.05)} 50%{transform:rotate(-18deg)} 75%{transform:rotate(12deg)} 100%{transform:rotate(0)} }
+      @keyframes poke-pulse   { 0%,100%{transform:scale(1)} 50%{transform:scale(1.18)} }
+      @keyframes poke-swing   { 0%,100%{transform:rotate(0)} 20%{transform:rotate(15deg)} 40%{transform:rotate(-11deg)} 60%{transform:rotate(7deg)} 80%{transform:rotate(-4deg)} }
+      @keyframes poke-flip    { 100%{transform:rotateY(360deg)} }
+      @keyframes poke-rubber  { 0%{transform:scale(1)} 30%{transform:scale(1.25,.75)} 50%{transform:scale(.85,1.15)} 70%{transform:scale(1.05,.95)} 100%{transform:scale(1)} }
+      @keyframes poke-headbang{ 0%,100%{transform:rotate(0) translateY(0)} 25%{transform:rotate(-10deg) translateY(6px)} 75%{transform:rotate(10deg) translateY(6px)} }
+      @keyframes poke-float   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-18px)} }
+      @keyframes poke-zoom    { 0%{transform:scale(.6);opacity:.6} 60%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
+      @keyframes poke-roll    { 0%{transform:translateX(-40px) rotate(-120deg)} 100%{transform:translateX(0) rotate(0)} }
+      @keyframes poke-boop    { 0%,100%{transform:scale(1)} 40%{transform:scale(.82)} 70%{transform:scale(1.08)} }
+      @keyframes poke-sparkle { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.8) drop-shadow(0 0 20px var(--chat-accent)); transform:scale(1.08)} }
+      @keyframes poke-orbit   { 0%{transform:rotate(0) translateX(0)} 25%{transform:translateY(-14px)} 50%{transform:translateX(14px)} 75%{transform:translateY(10px)} 100%{transform:rotate(0) translateX(0)} }
+      @keyframes poke-jelly   { 0%,100%{transform:skewX(0)} 30%{transform:skewX(-12deg)} 60%{transform:skewX(8deg)} }
       .poke-wiggle { animation: poke-wiggle 0.5s ease; }
       .poke-bounce { animation: poke-bounce 0.6s ease; }
       .poke-spin   { animation: poke-spin 0.7s ease-in-out; }
@@ -843,6 +855,18 @@
       .poke-jump   { animation: poke-jump 0.6s ease; }
       .poke-tilt   { animation: poke-tilt 0.6s ease; }
       .poke-dizzy  { animation: poke-dizzy 0.7s ease; }
+      .poke-pulse   { animation: poke-pulse 0.5s ease; }
+      .poke-swing   { animation: poke-swing 0.7s ease; }
+      .poke-flip    { animation: poke-flip 0.8s ease-in-out; }
+      .poke-rubber  { animation: poke-rubber 0.7s ease; }
+      .poke-headbang{ animation: poke-headbang 0.6s ease; }
+      .poke-float   { animation: poke-float 0.7s ease-in-out; }
+      .poke-zoom    { animation: poke-zoom 0.5s ease; }
+      .poke-roll    { animation: poke-roll 0.6s ease; }
+      .poke-boop    { animation: poke-boop 0.45s ease; }
+      .poke-sparkle { animation: poke-sparkle 0.7s ease; }
+      .poke-orbit   { animation: poke-orbit 0.8s ease-in-out; }
+      .poke-jelly   { animation: poke-jelly 0.6s ease; }
       /* Hold-to-reset: the head grows + brightens over 3s as a "charging" cue. */
       @keyframes head-charge {
         0%   { transform: scale(1); filter: brightness(1); }
@@ -1268,7 +1292,7 @@
           const onUp = () => {
             const dur = Date.now() - pressAt;
             clearHold();
-            if (!fired && dur < 3000) this.pokeHead(POKES);
+            if (!fired && dur < 3000) this.headReact();
           };
           head.addEventListener("pointerdown", onDown);
           head.addEventListener("pointerup", onUp);
@@ -1276,14 +1300,23 @@
           head.addEventListener("pointercancel", clearHold);
         }
 
-        pokeHead(pokes) {
+        // Play ONE random beautiful head animation. Called on a head tap, a mic tap,
+        // and whenever the wake word fires — so Maxi feels alive when engaged.
+        headReact() {
           const head = document.querySelector(".robot-container");
           if (!head) return;
-          const cls = pokes[Math.floor(Math.random() * pokes.length)];
-          pokes.forEach((p) => head.classList.remove(p));
+          const P = [
+            "poke-wiggle", "poke-bounce", "poke-spin", "poke-shake", "poke-nod",
+            "poke-jump", "poke-tilt", "poke-dizzy", "poke-pulse", "poke-swing",
+            "poke-flip", "poke-rubber", "poke-headbang", "poke-float", "poke-zoom",
+            "poke-roll", "poke-boop", "poke-sparkle", "poke-orbit", "poke-jelly",
+          ];
+          const cls = P[Math.floor(Math.random() * P.length)];
+          P.forEach((p) => head.classList.remove(p));
           void head.offsetWidth; // restart the animation
           head.classList.add(cls);
-          setTimeout(() => head.classList.remove(cls), 750);
+          clearTimeout(this._pokeTimer);
+          this._pokeTimer = setTimeout(() => head.classList.remove(cls), 900);
         }
 
         resetViaHead() {
@@ -1424,6 +1457,7 @@
         handleVoiceWake() {
           if (!this.isConnected || this.currentStage === "speaking") return;
           console.log("🎙️ Wake word heard - waking Maxi");
+          this.headReact();
           this.socket.emit("message", {
             type: "wake_word_detected",
             timestamp: new Date().toISOString(),
@@ -1465,6 +1499,7 @@
               this.showError("Not connected to server");
               return;
             }
+            this.headReact(); // a fun head wobble on every mic tap
 
             // Handle interruption whenever Maxi is actually talking — check the
             // audio player directly, not just the state (the state can lag behind
