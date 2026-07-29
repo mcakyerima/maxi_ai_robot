@@ -348,8 +348,12 @@ if [ "$TUNNEL" = "cloudflared" ]; then
   say "🌍 opening cloudflared quick tunnel → localhost:$PORT …"
   cloudflared tunnel --url "http://localhost:$PORT" >"$TUNNEL_LOG" 2>&1 &
   TUNNEL_PID=$!
+  # cloudflared's log also mentions api.trycloudflare.com (the endpoint it asks
+  # for a tunnel) and developers.cloudflare.com — neither is OUR tunnel, and
+  # both appear BEFORE the real URL. Skip them explicitly.
   for i in $(seq 1 30); do
-    PUBLIC_URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -1)
+    PUBLIC_URL=$(grep -oE 'https://[a-z0-9][a-z0-9.-]*\.trycloudflare\.com' "$TUNNEL_LOG" \
+                 | grep -vE '^https://(api|developers|dash|www)\.' | head -1)
     [ -n "$PUBLIC_URL" ] && break
     sleep 1
   done
@@ -358,12 +362,24 @@ elif [ "$TUNNEL" = "ngrok" ]; then
     say "❌ ngrok not installed.  https://ngrok.com/download   (needs a free authtoken)"
     exit 1
   fi
-  say "🌍 opening ngrok tunnel → localhost:$PORT …"
-  ngrok http "$PORT" --log=stdout >"$TUNNEL_LOG" 2>&1 &
+  # A reserved domain (ngrok's free plan includes one) keeps the SAME url across
+  # restarts, so Railway never needs re-pasting. Claim it at
+  # dashboard.ngrok.com → Domains, then: NGROK_DOMAIN=xxx.ngrok-free.app
+  if [ -n "${NGROK_DOMAIN:-}" ]; then
+    say "🌍 opening ngrok tunnel on your FIXED domain $NGROK_DOMAIN → localhost:$PORT …"
+    ngrok http "$PORT" --domain="$NGROK_DOMAIN" --log=stdout >"$TUNNEL_LOG" 2>&1 &
+  else
+    say "🌍 opening ngrok tunnel → localhost:$PORT …"
+    say "   (tip: a free reserved domain keeps this URL stable — see NGROK_DOMAIN)"
+    ngrok http "$PORT" --log=stdout >"$TUNNEL_LOG" 2>&1 &
+  fi
   TUNNEL_PID=$!
   for i in $(seq 1 30); do
+    # Take the value of "public_url" specifically — the API response mentions
+    # other ngrok hosts that are not our tunnel.
     PUBLIC_URL=$(curl -s http://127.0.0.1:4040/api/tunnels 2>/dev/null \
-      | grep -oE 'https://[a-zA-Z0-9.-]+\.ngrok[a-z.-]*\.(app|io)' | head -1)
+      | grep -oE '"public_url":"https://[^"]+"' \
+      | grep -oE 'https://[^"]+' | grep -vE '^https://(api|dashboard)\.' | head -1)
     [ -n "$PUBLIC_URL" ] && break
     sleep 1
   done
@@ -380,11 +396,25 @@ fi
 # --- 3. verify end-to-end through the tunnel ---------------------------------
 say ""
 say "🔎 checking the public URL…"
-if curl -sf --max-time 15 "$PUBLIC_URL/health" >/dev/null 2>&1; then
-  say "✅ $PUBLIC_URL/health  →  $(curl -s --max-time 15 "$PUBLIC_URL/health")"
-else
-  say "⚠️  $PUBLIC_URL/health did not answer yet (tunnels take a few seconds)."
+# Must be OUR finger API, not merely "something answered 200". A wrong URL that
+# happens to serve a page would otherwise get pasted into Railway.
+HEALTH_BODY=""
+for i in $(seq 1 10); do
+  HEALTH_BODY=$(curl -s --max-time 10 "$PUBLIC_URL/health" 2>/dev/null)
+  case "$HEALTH_BODY" in *'"status"'*) break ;; esac
+  HEALTH_BODY=""
+  sleep 2
+done
+
+if [ -z "$HEALTH_BODY" ]; then
+  say "❌ $PUBLIC_URL/health did not return the finger API's health JSON."
+  say "   That URL is probably NOT your tunnel — do NOT paste it into Railway."
+  say "   The tunnel log is: $TUNNEL_LOG"
+  say "   Look for a line like:  |  https://<words>.trycloudflare.com  |"
+  tail -25 "$TUNNEL_LOG" | sed 's/^/      /'
+  exit 1
 fi
+say "✅ $PUBLIC_URL/health  →  $HEALTH_BODY"
 
 cat <<EOF
 
@@ -397,7 +427,13 @@ cat <<EOF
 
    RASPBERRY_PI_URL=$PUBLIC_URL
    MAXI_HAND_API_KEY=${MAXI_HAND_API_KEY:-<the key this Pi is using>}
-
+${NGROK_DOMAIN:+
+ ✅ This is your FIXED domain — it will be the same next restart, so you only
+    ever need to set RASPBERRY_PI_URL once.
+}${NGROK_DOMAIN:-
+ ⚠️  This URL CHANGES every restart. Re-paste RASPBERRY_PI_URL each time, or
+    switch to a fixed one:  NGROK_DOMAIN=xxx.ngrok-free.app TUNNEL=ngrok ./start_hands.sh
+}
  Then confirm from any browser:
    https://<your-railway-app>/hands/status?probe=1     → "mode":"hardware"
    https://<your-railway-app>/hands/test?pin=1234&n=3  → 3 fingers move

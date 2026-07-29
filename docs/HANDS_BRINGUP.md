@@ -390,17 +390,44 @@ Or just pull the servo power. To recover afterwards, restart `./start_hands.sh`.
 | `$'\r': command not found` | the file was copied from Windows with Windows line endings | `sed -i 's/\r$//' start_hands.sh` |
 | `Permission denied` running the script | not marked runnable | `chmod +x start_hands.sh` |
 
-### Every day after the first time
-Steps 13 → 15 → 16 only. About 3 minutes:
+### 🔁 EVERY TIME YOU RESTART MAXI'S HANDS
+
+**Anything that stops `start_hands.sh` — Ctrl-C, closing the terminal, rebooting the Pi,
+losing power — gives you a NEW tunnel address.** The API key never changes; only the URL.
+So every restart:
+
+1. On the Pi: `cd ~/servo_control && ./start_hands.sh`
+2. Copy the new `Public URL` it prints.
+3. Railway → Variables → set **`RASPBERRY_PI_URL`** to it (leave `MAXI_HAND_API_KEY` alone).
+   Railway restarts by itself, about a minute.
+4. Check `https://<railway-app>/hands/status?probe=1` → `"mode":"hardware"`.
+
+If you skip step 3, Maxi keeps talking normally but the fingers stop moving — it falls back
+to simulation, because the old address no longer exists.
+
+### 🎯 Make the URL stop changing (do this before 4 Aug)
+
+Re-pasting a URL in front of an audience is exactly the kind of step that goes wrong. Two
+free ways to get a **permanent** address, so you set Railway once and never touch it again:
+
+**Option A — ngrok reserved domain (easiest; ngrok is already on this Pi).**
+Sign in at [dashboard.ngrok.com](https://dashboard.ngrok.com) → **Domains** → claim your free
+static domain (e.g. `maxi-hands.ngrok-free.app`), and add your authtoken once:
 
 ```bash
-cd ~/servo_control && ./start_hands.sh
+ngrok config add-authtoken <your-token>          # once, ever
+echo 'export NGROK_DOMAIN="maxi-hands.ngrok-free.app"' >> ~/.maxi_hands.env
+echo 'export TUNNEL=ngrok' >> ~/.maxi_hands.env
 ```
-…then paste the new `RASPBERRY_PI_URL` into Railway and check `/hands/status?probe=1`.
 
-> **For the 4 Aug demo:** a cloudflared **named** tunnel (free, needs a domain) keeps the
-> same web address forever, so you never re-paste anything under pressure. Worth setting up
-> in advance.
+Then `./start_hands.sh` always publishes the same address. The box it prints will confirm:
+*"This is your FIXED domain."*
+
+**Option B — cloudflared named tunnel.** Free too, but needs a domain you own on Cloudflare.
+Better long-term; more setup.
+
+Either way, `RASPBERRY_PI_URL` gets set **once** and the daily routine shrinks to: start the
+script, glance at `/hands/status`.
 
 ---
 
