@@ -197,13 +197,29 @@ systemctl list-units --type=service --all | grep -iE 'hand|servo|maxi|finger'
 If that prints anything (on this robot it was **`maxi-hand.service`**):
 
 ```bash
-systemctl cat maxi-hand.service            # see what it runs, out of interest
+systemctl cat --no-pager maxi-hand.service   # what does it run, and with which key?
 sudo systemctl stop maxi-hand.service
-sudo systemctl disable maxi-hand.service   # stops it coming back after a reboot
+sudo systemctl disable maxi-hand.service     # stops it coming back after a reboot
 ss -ltn | grep :5001 || echo "port 5001 is FREE"
 ```
 
+To remove it for good rather than just disable it (what this robot needed):
+
+```bash
+sudo cp /etc/systemd/system/maxi-hand.service ~/maxi-hand.service.bak   # keep a copy
+sudo rm /etc/systemd/system/maxi-hand.service
+sudo systemctl daemon-reload && sudo systemctl reset-failed
+```
+
 ✅ *You should see:* `port 5001 is FREE`.
+
+> Two things to look for in the `systemctl cat` output. **`ExecStart=`** tells you whether
+> it was running the very file you just replaced. **`Environment="MAXI_HAND_API_KEY=…"`**
+> is often the built-in default `a1b2c3d4…` — if you ever put *that* into Railway instead
+> of your own key, everything looks connected while Maxi silently simulates.
+>
+> `systemctl cat` opens a pager, which swallows any commands you pasted after it. Use
+> `--no-pager`, or run it on its own.
 
 ### STEP 12 — Set the secret key (once)
 Pick a long random password-like string. It must be **identical** on the Pi and on Railway.
