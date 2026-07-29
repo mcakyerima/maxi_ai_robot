@@ -8,8 +8,8 @@ The chain you are building:
 **tablet → Railway (Maxi's brain) → tunnel → Raspberry Pi → PCA9685 board → 12 servos.**
 
 **Grown-up does:** everything with power and wiring (Steps 1–4), and the Railway steps.
-**Children can do:** the calibration sliders (Step 9), the checks (Steps 11–13), and of
-course the live test (Step 14).
+**Children can do:** the calibration sliders (Step 9), the browser checks
+(Steps 16–17), and of course the live test (Step 19).
 
 ### What you need on the table
 - The robot hands, the Raspberry Pi, the PCA9685 board
@@ -83,11 +83,20 @@ cd maxi_ai_robot && git pull                                # every other time
 cd hardware
 ```
 
-**If not — copy from the laptop** (run this *on the laptop*, in the project folder):
+**If not — copy from the laptop** (run this *on the laptop*, in the project folder).
+Replace `<user>` and `<folder>` with **your** Pi's login and hand folder — on this robot
+that is `Maxzeeton` and `~/servo_control`, not the `pi`/`~/maxi` defaults:
 
 ```bash
 scp hardware/finger_controller_api.py hardware/start_hands.sh \
-    hardware/requirements_pi.txt hardware/finger_callibrator.py pi@raspberrypi.local:~/maxi/hardware/
+    hardware/requirements_pi.txt hardware/finger_callibrator.py \
+    <user>@raspberrypi.local:~/<folder>/
+```
+
+Check on the Pi that the controller really was replaced — the date should be today:
+
+```bash
+ls -l finger_controller_api.py
 ```
 
 **Either way, all the hand files must end up in ONE folder together.** The programs read
@@ -123,7 +132,7 @@ for `sudo`. **Nothing moves during setup.** It takes a few minutes.
 ```bash
 sudo reboot
 # wait, log back in, then:
-cd ~/maxi_ai_robot/hardware && ./start_hands.sh --setup
+cd ~/servo_control && ./start_hands.sh --setup
 ```
 
 ❌ *If it says `NOTHING answers at 0x40`:* the board isn't wired right. Recheck Steps 2–3
@@ -137,7 +146,7 @@ cd ~/maxi_ai_robot/hardware && ./start_hands.sh --setup
 > the moment it starts. Wrong ranges make a finger push into its own mechanical stop — the
 > servo buzzes, gets hot, and eventually burns out.
 >
-> **Already calibrated on this exact hand and nothing was rebuilt?** You can skip to Step 10 —
+> **Already calibrated on this exact hand and nothing was rebuilt?** You can skip to Part E —
 > just check `ls hand_calibration.json` shows the file.
 
 ### STEP 8 — Start the calibrator
@@ -175,16 +184,37 @@ Press **Ctrl-C** in the Pi terminal.
 
 # PART E — START THE HANDS
 
-### STEP 11 — Set the secret key (once)
+### STEP 11 — Turn off any OLD hand service (only if you had an earlier setup)
+
+> If this Pi ever ran an older version of Maxi's hands, a background service may already
+> be holding port 5001. `pkill` will not stop it — systemd restarts it immediately. It
+> would also be running the **old** controller code with the **wrong** API key.
+
+```bash
+systemctl list-units --type=service --all | grep -iE 'hand|servo|maxi|finger'
+```
+
+If that prints anything (on this robot it was **`maxi-hand.service`**):
+
+```bash
+systemctl cat maxi-hand.service            # see what it runs, out of interest
+sudo systemctl stop maxi-hand.service
+sudo systemctl disable maxi-hand.service   # stops it coming back after a reboot
+ss -ltn | grep :5001 || echo "port 5001 is FREE"
+```
+
+✅ *You should see:* `port 5001 is FREE`.
+
+### STEP 12 — Set the secret key (once)
 Pick a long random password-like string. It must be **identical** on the Pi and on Railway.
 
 ```bash
 echo 'export MAXI_HAND_API_KEY="choose-a-long-random-string-here"' >> ~/.maxi_hands.env
 ```
 
-Write it down — you'll paste the same one into Railway in Step 14.
+Write it down — you'll paste the same one into Railway in Step 15.
 
-### STEP 12 — Start everything
+### STEP 13 — Start everything
 
 ```bash
 ./start_hands.sh
@@ -216,7 +246,7 @@ web address changes every time you restart it.
 
 # PART F — CHECK THE CONNECTION FROM THE LAPTOP
 
-### STEP 13 — Pre-flight the link
+### STEP 14 — Pre-flight the link
 On the **laptop**, in the project folder — use the URL and key the Pi just printed:
 
 ```bash
@@ -237,7 +267,7 @@ Railway is involved. With `--move` the right hand counts **3 → 5 → then clos
 
 # PART G — CONNECT THE CLOUD BRAIN
 
-### STEP 14 — Paste the two variables into Railway
+### STEP 15 — Paste the two variables into Railway
 Railway → your service → **Variables**:
 
 ```
@@ -253,7 +283,7 @@ While you're there, confirm these are still set:
 
 Save. Railway restarts by itself (about a minute).
 
-### STEP 15 — Ask Maxi's brain if it can see the hands
+### STEP 16 — Ask Maxi's brain if it can see the hands
 Open this in any browser, even a phone:
 
 ```
@@ -263,10 +293,10 @@ https://<your-railway-app>/hands/status?probe=1
 ✅ *You should see:* `"mode": "hardware"` and `"available": true`.
 
 ❌ *`"mode": "simulation (Pi unreachable)"`* → read the `last_error` field:
-- mentions *connect* or *timeout* → the tunnel died. Restart Step 12 and re-paste the new URL.
-- mentions *401* → the key doesn't match. Fix Step 14.
+- mentions *connect* or *timeout* → the tunnel died. Restart Step 13 and re-paste the new URL.
+- mentions *401* → the key doesn't match. Fix Step 15.
 
-### STEP 16 — Move a finger from the internet
+### STEP 17 — Move a finger from the internet
 ```
 https://<your-railway-app>/hands/test?pin=1234&n=3
 ```
@@ -280,12 +310,12 @@ https://<your-railway-app>/hands/test?pin=1234&n=3
 
 # PART H — THE LIVE TEST WITH THE CHILDREN
 
-### STEP 17 — Open Maxi on the tablet
+### STEP 18 — Open Maxi on the tablet
 Go to `https://<your-railway-app>/math`. Volume up. Allow the microphone if asked.
 
 > Only **one** tablet at a time — two open browsers scramble Maxi's state.
 
-### STEP 18 — Talk to Maxi
+### STEP 19 — Talk to Maxi
 Say **"Hey Maxi"** → wait for the reply sound → then **"what is 3 plus 2"**.
 
 ✅ *You should see and hear:*
@@ -294,7 +324,7 @@ Say **"Hey Maxi"** → wait for the reply sound → then **"what is 3 plus 2"**.
 3. Maxi says *"The answer is 5!"* — the hand opens **5 fingers**
 4. The hand closes, and Maxi goes quiet, ready for the next question
 
-### STEP 19 — Try a few more
+### STEP 20 — Try a few more
 - "what is 4 plus 4" → 8 fingers (both hands)
 - "what is 8 plus 7" → 15, shown on the screen only (we only have 10 fingers!)
 - "if I have 3 mangoes and buy 4 more, how many do I have?" → step-by-step
@@ -306,7 +336,7 @@ toggle **off** in Settings and use the buttons instead — the hands work exactl
 
 # PART I — SHUTTING DOWN
 
-### STEP 20 — Stop safely
+### STEP 21 — Stop safely
 1. Press **Ctrl-C** in the Pi terminal (stops the API and the tunnel).
 2. `sudo shutdown -h now`, wait for the green light to stop blinking.
 3. **Then** switch off the servo power supply.
@@ -334,18 +364,21 @@ Or just pull the servo power. To recover afterwards, restart `./start_hands.sh`.
 | A finger buzzes and gets hot | calibration pushes into a stop | Ctrl-C now; redo Part D for that finger |
 | One finger never moves | wrong channel or dead servo | Step 4 — left 0–5, right 6–11 |
 | All fingers limp, nothing responds | emergency stop is latched | restart `./start_hands.sh` |
-| `/hands/status` says simulation | tunnel down, wrong URL, or wrong key | Step 15, read `last_error` |
-| Worked, then stopped mid-demo | the tunnel restarted → new URL | redo Steps 12 and 14 |
+| `/hands/status` says simulation | tunnel down, wrong URL, or wrong key | Step 16, read `last_error` |
+| Worked, then stopped mid-demo | the tunnel restarted → new URL | redo Steps 13 and 15 |
 | Commands time out | moves take longer than 8 s | set `HANDS_TIMEOUT=15` on Railway |
-| `Port 5001 already in use` | it's already running | `pkill -f finger_controller_api.py` |
+| `Port 5001 already in use` | an old controller is running | `pkill -f finger_controller_api.py` |
+| …and it comes straight back | an old **systemd service** owns it (`maxi-hand.service`) | Step 11 — `sudo systemctl disable --now maxi-hand.service` |
+| `PCA9685 NOT found at 0x40` but the calibrator works | the check is only a hint (a `UU` reading is normal) | ignore it — trust `/health` and the calibrator |
+| `👋 hands offline` right after an error | that's just the script's exit message | read the **error above it** — that's the real problem |
 | `$'\r': command not found` | the file was copied from Windows with Windows line endings | `sed -i 's/\r$//' start_hands.sh` |
 | `Permission denied` running the script | not marked runnable | `chmod +x start_hands.sh` |
 
 ### Every day after the first time
-Steps 12 → 14 → 15 only. About 3 minutes:
+Steps 13 → 15 → 16 only. About 3 minutes:
 
 ```bash
-cd ~/maxi_ai_robot/hardware && ./start_hands.sh
+cd ~/servo_control && ./start_hands.sh
 ```
 …then paste the new `RASPBERRY_PI_URL` into Railway and check `/hands/status?probe=1`.
 
@@ -368,7 +401,8 @@ POWER & WIRING
 [ ] Nothing pressing against a finger's path
 [ ] Power on order: servo supply first, then the Pi
 
-ON THE PI                            (cd ~/maxi_ai_robot/hardware)
+ON THE PI                            (cd ~/servo_control)
+[ ] No old hand service running:  ss -ltn | grep :5001   -> nothing
 [ ] hand_calibration.json is present
 [ ] i2cdetect -y 1   shows 40
 [ ] Calibrator (:5000) is NOT running
@@ -423,7 +457,10 @@ TUNNEL=none ./start_hands.sh            # LAN only (Railway CANNOT reach this)
 ```
 
 **Optional — start the hands automatically at boot.** Only do this once everything works
-manually, and note you'll still need to copy the new tunnel URL into Railway each time:
+manually. Two warnings: **disable any older hand service first** (Step 11) or they'll
+fight over port 5001, and you still need to copy the new tunnel URL into Railway each time.
+
+Replace `<user>` and the path with your own (here: `Maxzeeton`, `/home/Maxzeeton/servo_control`):
 
 ```bash
 sudo tee /etc/systemd/system/maxi-hands.service >/dev/null <<'EOF'
@@ -432,9 +469,10 @@ Description=Maxi hands (finger API + tunnel)
 After=network-online.target
 
 [Service]
-User=pi
-WorkingDirectory=/home/pi/maxi_ai_robot/hardware
-ExecStart=/home/pi/maxi_ai_robot/hardware/start_hands.sh
+User=<user>
+WorkingDirectory=/home/<user>/servo_control
+EnvironmentFile=/home/<user>/.maxi_hands.env
+ExecStart=/home/<user>/servo_control/start_hands.sh
 Restart=on-failure
 
 [Install]
@@ -443,3 +481,8 @@ EOF
 sudo systemctl enable --now maxi-hands
 journalctl -u maxi-hands -f      # watch it, and read the tunnel URL from here
 ```
+
+> `EnvironmentFile` needs plain `KEY=value` lines, **without** `export`. If your
+> `~/.maxi_hands.env` uses `export MAXI_HAND_API_KEY="..."` (as Step 12 writes it), either
+> drop the `export` and the quotes, or leave this line out — the script sources the file
+> itself when it starts.
