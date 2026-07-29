@@ -44,6 +44,23 @@ line() { echo "─────────────────────�
 # The Pi's LAN address (only used in printed hints; never fatal).
 lan_ip() { hostname -I 2>/dev/null | awk '{print $1}'; }
 
+# Look for the servo board at 0x40. Checks bus 1 then bus 0, and accepts "UU"
+# (address claimed by a kernel driver) as present. Sets I2C_BUS on success.
+# Advisory only — a working calibrator is the real proof the wiring is good.
+I2C_BUS=""
+find_pca9685() {
+  command -v i2cdetect >/dev/null 2>&1 || return 1
+  local bus out
+  for bus in 1 0; do
+    out=$(i2cdetect -y "$bus" 2>/dev/null) || continue
+    if printf '%s\n' "$out" | awk '/^40:/ {print $2}' | grep -qiE '^(40|UU)$'; then
+      I2C_BUS="$bus"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ═══════════════════════════════════════════════════════════════════
 # SETUP — runs on the first ever launch, or on demand with --setup
 # ═══════════════════════════════════════════════════════════════════
@@ -75,12 +92,14 @@ run_setup() {
   install_cloudflared
 
   say "5/5  checking the servo board…"
-  if [ -e /dev/i2c-1 ]; then
-    if i2cdetect -y 1 2>/dev/null | grep -qi " 40"; then
-      say "     ✅ PCA9685 found at 0x40"
+  if [ -e /dev/i2c-1 ] || [ -e /dev/i2c-0 ]; then
+    if find_pca9685; then
+      say "     ✅ PCA9685 found at 0x40 on bus $I2C_BUS"
     else
-      say "     ⚠️  /dev/i2c-1 exists but NOTHING answers at 0x40."
+      say "     ⚠️  the I2C bus exists but nothing answered at 0x40:"
+      i2cdetect -y 1 2>&1 | sed 's/^/        /' | head -12
       say "        Check SDA→GPIO2, SCL→GPIO3, VCC→3V3, and the COMMON GROUND."
+      say "        (If the calibrator can move fingers, ignore this — it's only a hint.)"
     fi
   else
     say "     ⚠️  /dev/i2c-1 does not exist yet — I2C needs a REBOOT to switch on."
@@ -162,6 +181,11 @@ cleanup() {
   [ "$CLEANED" = "1" ] && return          # TERM then EXIT would fire this twice
   CLEANED=1
   trap - EXIT INT TERM
+  # Say nothing if we never actually started anything — otherwise an early exit
+  # (e.g. "port in use") looks like the hands themselves failed.
+  if [ -z "$API_PID" ] && [ -z "$TUNNEL_PID" ]; then
+    return
+  fi
   echo ""
   say "🛑 stopping…"
   [ -n "$TUNNEL_PID" ] && kill "$TUNNEL_PID" 2>/dev/null
@@ -186,22 +210,55 @@ if [ ! -f hand_calibration.json ]; then
 fi
 
 if [ "${SIMULATION_MODE:-false}" != "true" ]; then
-  if command -v i2cdetect >/dev/null 2>&1; then
-    if i2cdetect -y 1 2>/dev/null | grep -qi " 40"; then
-      say "✅ PCA9685 found on I2C bus 1 at 0x40"
-    else
-      say "❌ PCA9685 NOT found at 0x40 on i2c-1."
-      say "   Check SDA/SCL wiring, the COMMON GROUND, and that I2C is on"
-      say "   (sudo raspi-config → Interface → I2C, then reboot)."
-      say "   Continuing anyway — the API will report degraded health."
-    fi
+  if find_pca9685; then
+    say "✅ PCA9685 found at 0x40 on I2C bus $I2C_BUS"
+  elif ! command -v i2cdetect >/dev/null 2>&1; then
+    say "ℹ️  i2cdetect not installed, skipping the board check (sudo apt install i2c-tools)."
+  else
+    say "ℹ️  Could not see the PCA9685 at 0x40 with i2cdetect. This check is only a"
+    say "    hint — if the calibrator moves the fingers, your wiring IS fine."
+    say "    What i2cdetect reported:"
+    i2cdetect -y 1 2>&1 | sed 's/^/      /' | head -12
+    say "    (an address shown as UU means a kernel driver claimed it — also OK)"
+    say "    Continuing — the real answer comes from /health below."
   fi
 fi
 
-if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ":$PORT "; then
-  say "❌ Port $PORT is already in use — a controller is already running."
-  say "   Stop it first:  pkill -f finger_controller_api.py"
-  exit 1
+# --- is something already on the port? ---------------------------------------
+port_holder() { ss -ltnp 2>/dev/null | grep ":$PORT " | head -1; }
+if command -v ss >/dev/null 2>&1 && [ -n "$(port_holder)" ]; then
+  say "❌ Port $PORT is already in use — another controller is running."
+  say "   That is what is holding it:"
+  say "      $(port_holder)"
+  case "$(port_holder)" in
+    *users:*) ;;
+    *) say "      (to see WHICH program:  sudo ss -ltnp | grep :$PORT)" ;;
+  esac
+  say ""
+  say "   Old versions of this project also serve this port. To stop them all:"
+  say "      pkill -f finger_controller_api.py; pkill -f hand_api.py; pkill -f app.py"
+  say "   If it comes back after a reboot, something auto-starts it:"
+  say "      systemctl list-units --type=service --all | grep -iE 'hand|servo|maxi|finger'"
+  if [ -t 0 ]; then
+    printf "   Kill whatever is on port %s now and continue? [y/N] " "$PORT"
+    read -r reply
+    case "$reply" in
+      y|Y)
+        pkill -f finger_controller_api.py 2>/dev/null
+        pkill -f hand_api.py 2>/dev/null
+        pkill -f old_finger_controller_api.py 2>/dev/null
+        sleep 2
+        if [ -n "$(port_holder)" ]; then
+          say "   ❌ still in use. Find it with:  sudo ss -ltnp | grep :$PORT"
+          exit 1
+        fi
+        say "   ✅ port $PORT is free now."
+        ;;
+      *) exit 1 ;;
+    esac
+  else
+    exit 1
+  fi
 fi
 
 # --- 1. the finger API -------------------------------------------------------
