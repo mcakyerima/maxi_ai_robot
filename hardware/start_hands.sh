@@ -351,7 +351,9 @@ if [ "$TUNNEL" = "cloudflared" ]; then
   # cloudflared's log also mentions api.trycloudflare.com (the endpoint it asks
   # for a tunnel) and developers.cloudflare.com — neither is OUR tunnel, and
   # both appear BEFORE the real URL. Skip them explicitly.
-  for i in $(seq 1 30); do
+  # On a restricted network cloudflared runs a ~30s connectivity precheck before
+  # it prints the URL, so wait generously.
+  for i in $(seq 1 60); do
     PUBLIC_URL=$(grep -oE 'https://[a-z0-9][a-z0-9.-]*\.trycloudflare\.com' "$TUNNEL_LOG" \
                  | grep -vE '^https://(api|developers|dash|www)\.' | head -1)
     [ -n "$PUBLIC_URL" ] && break
@@ -389,32 +391,46 @@ else
 fi
 
 if [ -z "$PUBLIC_URL" ]; then
-  say "❌ the tunnel did not report a public URL. See $TUNNEL_LOG"
+  say "❌ the tunnel did not report a public URL within 60s. Last log lines:"
+  tail -15 "$TUNNEL_LOG" 2>/dev/null | sed 's/^/      /'
+  say ""
+  say "   Full log: $TUNNEL_LOG"
+  say "   If you see 'Allow outbound TCP on port 7844' this network is blocking"
+  say "   cloudflared. Try ngrok instead:   TUNNEL=ngrok ./start_hands.sh"
   exit 1
 fi
 
 # --- 3. verify end-to-end through the tunnel ---------------------------------
 say ""
 say "🔎 checking the public URL…"
-# Must be OUR finger API, not merely "something answered 200". A wrong URL that
-# happens to serve a page would otherwise get pasted into Railway.
+# ADVISORY ONLY — never fatal. This runs from the Pi, and on a restricted network
+# the Pi often cannot reach Cloudflare's edge even when the tunnel works
+# perfectly from the internet. The authoritative test is check_hands.py from the
+# laptop. We still look for the finger API's own JSON so a wrong host (e.g.
+# api.trycloudflare.com) is not silently blessed.
 HEALTH_BODY=""
-for i in $(seq 1 10); do
-  HEALTH_BODY=$(curl -s --max-time 10 "$PUBLIC_URL/health" 2>/dev/null)
+for i in $(seq 1 6); do
+  HEALTH_BODY=$(curl -s --max-time 8 "$PUBLIC_URL/health" 2>/dev/null)
   case "$HEALTH_BODY" in *'"status"'*) break ;; esac
   HEALTH_BODY=""
-  sleep 2
+  sleep 3
 done
 
-if [ -z "$HEALTH_BODY" ]; then
-  say "❌ $PUBLIC_URL/health did not return the finger API's health JSON."
-  say "   That URL is probably NOT your tunnel — do NOT paste it into Railway."
-  say "   The tunnel log is: $TUNNEL_LOG"
-  say "   Look for a line like:  |  https://<words>.trycloudflare.com  |"
-  tail -25 "$TUNNEL_LOG" | sed 's/^/      /'
-  exit 1
+if [ -n "$HEALTH_BODY" ]; then
+  say "✅ $PUBLIC_URL/health  →  $HEALTH_BODY"
+elif grep -q "Registered tunnel connection" "$TUNNEL_LOG" 2>/dev/null; then
+  say "⚠️  Could not fetch $PUBLIC_URL from the Pi itself — but cloudflared DID"
+  say "    register the tunnel, so it is probably fine from the internet."
+  say "    (This Pi's network blocks some outbound traffic; DNS for a brand-new"
+  say "     tunnel can also take a moment.) Confirm from your LAPTOP:"
+  say "      python tools/check_hands.py $PUBLIC_URL --key <your-key>"
+else
+  say "⚠️  Could not fetch $PUBLIC_URL, and no tunnel connection is registered yet."
+  say "    Give it a few more seconds, then test from your laptop:"
+  say "      python tools/check_hands.py $PUBLIC_URL --key <your-key>"
+  say "    If it stays broken, see $TUNNEL_LOG (last lines):"
+  tail -8 "$TUNNEL_LOG" | sed 's/^/      /'
 fi
-say "✅ $PUBLIC_URL/health  →  $HEALTH_BODY"
 
 cat <<EOF
 
