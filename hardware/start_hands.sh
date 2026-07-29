@@ -224,6 +224,49 @@ if [ "${SIMULATION_MODE:-false}" != "true" ]; then
   fi
 fi
 
+# --- is an OLD hand service going to fight us? -------------------------------
+# Earlier versions of this project installed e.g. maxi-hand.service, which
+# systemd restarts on boot (and after pkill). It grabs port 5001 and the I2C
+# bus, usually with a different API key — so the brain 401s into simulation.
+warn_conflicting_services() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  [ -n "${INVOCATION_ID:-}" ] && return 0     # we ARE the systemd service; fine
+  local unit found=""
+  for unit in $(systemctl list-unit-files --type=service --no-legend --no-pager 2>/dev/null \
+                | awk '{print $1}' | grep -iE '(maxi|hand|servo|finger).*\.service$'); do
+    [ "$unit" = "maxi-hands.service" ] && continue   # the unit that runs THIS script
+    if [ "$(systemctl is-enabled "$unit" 2>/dev/null)" = "enabled" ] \
+       || [ "$(systemctl is-active "$unit" 2>/dev/null)" = "active" ]; then
+      found="$found $unit"
+    fi
+  done
+  [ -z "$found" ] && return 0
+
+  say "⚠️  An older hand service is installed and will fight for port $PORT:"
+  for unit in $found; do
+    say "      $unit  (enabled=$(systemctl is-enabled "$unit" 2>/dev/null), active=$(systemctl is-active "$unit" 2>/dev/null))"
+  done
+  say "    It restarts itself on every boot, so disabling it is the only fix."
+  if [ -t 0 ]; then
+    printf "    Stop and disable it now? [Y/n] "
+    read -r reply
+    case "$reply" in
+      n|N) say "    Left running — expect a port clash below." ;;
+      *)
+        for unit in $found; do
+          $SUDO systemctl stop "$unit" 2>/dev/null
+          $SUDO systemctl disable "$unit" 2>/dev/null
+          say "    ✅ $unit stopped and disabled (won't come back after a reboot)"
+        done
+        say "    To delete it entirely:  sudo rm /etc/systemd/system/<name>.service && sudo systemctl daemon-reload"
+        ;;
+    esac
+  else
+    say "    Fix it with:  sudo systemctl disable --now <name>.service"
+  fi
+}
+warn_conflicting_services
+
 # --- is something already on the port? ---------------------------------------
 port_holder() { ss -ltnp 2>/dev/null | grep ":$PORT " | head -1; }
 if command -v ss >/dev/null 2>&1 && [ -n "$(port_holder)" ]; then
