@@ -145,9 +145,9 @@ def _num_word(v: Any) -> str:
     return _NUMBER_WORDS.get(i, str(i))
 
 
-def _speech_duration_ms(text: str, *, floor: int = 850) -> int:
+def _speech_duration_ms(text: str, *, floor: int = 500, scale: float = 0.72) -> int:
     words = max(1, len(text.split()))
-    return max(floor, int(((words / 2.7) + 0.25) * 1000))
+    return max(floor, int((((words / 2.7) + 0.25) * 1000) * scale))
 
 
 def _quick_solve(text: str) -> Optional[Solved]:
@@ -313,7 +313,7 @@ class MathSkill(Skill):
         spoken = f"The answer is {_num_word(result_int)}!"
         tasks = [
             ctx.speaker.say_as(spoken, f"The answer is {result_str}!"),
-            hands.show_number(result_int, "right", duration_ms=_speech_duration_ms(spoken, floor=1100)),
+            hands.show_number(result_int, "right", duration_ms=_speech_duration_ms(spoken, floor=650, scale=0.72)),
         ]
         if result_int <= 5 and hasattr(hands, "clear_hand"):
             tasks.append(hands.clear_hand("left"))
