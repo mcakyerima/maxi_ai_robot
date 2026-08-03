@@ -86,6 +86,18 @@ async def main() -> int:
     assert speaker_calls[2] == ("say", "plus"), speaker_calls
     assert speaker_calls[3] == ("say_as", "two", "2"), speaker_calls
 
+    split_ctx = FakeCtx()
+    split_ctx.text = "3 plus 4"
+    split_solved = Solved(a=3, b=4, op="+", result=7, basic=True)
+    await skill._narrate(split_ctx, split_solved)
+
+    split_hand_calls = [call for call in split_ctx.hands.calls if call[0] in {"show_number", "clear_hand", "close_all"}]
+    assert ("show_number", "right", 3, 180) in split_hand_calls, split_hand_calls
+    assert ("show_number", "left", 4, 180) in split_hand_calls, split_hand_calls
+    assert ("show_number", "right", 5, 250) in split_hand_calls, split_hand_calls
+    assert ("show_number", "left", 2, 150) in split_hand_calls, split_hand_calls
+    assert split_hand_calls[-1] == ("close_all",), split_hand_calls
+
     print("PASS: simple-addition hand choreography is right-hand, left-hand, final-answer sync")
     return 0
 

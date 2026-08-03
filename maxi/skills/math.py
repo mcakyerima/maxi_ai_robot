@@ -81,6 +81,15 @@ class Solved:
     basic: bool  # small whole-number arithmetic we can show on fingers
 
 
+@dataclass(frozen=True)
+class HandTiming:
+    operand_ms: int = 180
+    result_ms: int = 250
+    split_delay_ms: int = 150
+    close_ms: int = 200
+    operator_hold_ms: int = 450
+
+
 def _to_number(token: str) -> Optional[int]:
     token = token.strip().lower()
     if token.isdigit():
@@ -154,6 +163,10 @@ def _speech_pause_seconds(text: str, *, floor: float = 0.35, scale: float = 0.45
     return max(floor, (((max(1, len(text.split())) / 2.7) + 0.25) * scale))
 
 
+def _split_result(result: int) -> tuple[int, int]:
+    return min(5, result), max(0, result - 5)
+
+
 def _quick_solve(text: str) -> Optional[Solved]:
     op = _detect_op(text)
     nums = _extract_numbers(text)
@@ -206,6 +219,7 @@ class MathSkill(Skill):
 
     def __init__(self, safety: Safety | None = None) -> None:
         self.safety = safety or Safety()
+        self.timing = HandTiming()
 
     async def handle(self, ctx: SkillContext) -> None:
         text = ctx.text.strip()
@@ -276,12 +290,13 @@ class MathSkill(Skill):
             await asyncio.sleep(_speech_pause_seconds("Let's work it out."))
             await self._say_number_and_show(ctx, hands, s.a, "right")
             await ctx.speaker.say("plus")
+            await asyncio.sleep(self.timing.operator_hold_ms / 1000)
             await self._say_number_and_show(ctx, hands, s.b, "left")
             await ctx.emit(events.emotion("happy"))
             if explanation:
                 await ctx.speaker.say(explanation)
             await self._say_final_answer(ctx, hands, result_int, result_str)
-            await asyncio.sleep(_speech_pause_seconds(f"The answer is {_num_word(result_int)}!", floor=0.55, scale=0.55))
+            await asyncio.sleep(_speech_pause_seconds(f"The answer is {_num_word(result_int)}!", floor=0.55, scale=0.5))
             await hands.close_all()
         else:
             await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
@@ -313,18 +328,30 @@ class MathSkill(Skill):
         spoken = _num_word(number)
         await asyncio.gather(
             ctx.speaker.say_as(spoken, str(number)),
-            hands.show_number(number, hand, duration_ms=180),
+            hands.show_number(number, hand, duration_ms=self.timing.operand_ms),
         )
 
     async def _say_final_answer(self, ctx: SkillContext, hands: Any, result_int: int, result_str: str) -> None:
         spoken = f"The answer is {_num_word(result_int)}!"
+        if result_int > 5:
+            right, left = _split_result(result_int)
+            hand_task = self._show_split_result(hands, right, left)
+        else:
+            hand_task = hands.show_number(result_int, "right", duration_ms=self.timing.result_ms)
+
         tasks = [
             ctx.speaker.say_as(spoken, f"The answer is {result_str}!"),
-            hands.show_number(result_int, "right", duration_ms=275),
+            hand_task,
         ]
         if result_int <= 5 and hasattr(hands, "clear_hand"):
             tasks.append(hands.clear_hand("left"))
         await asyncio.gather(*tasks)
+
+    async def _show_split_result(self, hands: Any, right: int, left: int) -> bool:
+        await hands.show_number(right, "right", duration_ms=self.timing.result_ms)
+        await asyncio.sleep(self.timing.split_delay_ms / 1000)
+        await hands.show_number(left, "left", duration_ms=max(150, self.timing.result_ms - 100))
+        return True
 
     def _explain(self, s: Solved, result_str: str) -> str:
         a, b = s.a, s.b
