@@ -145,6 +145,11 @@ def _num_word(v: Any) -> str:
     return _NUMBER_WORDS.get(i, str(i))
 
 
+def _speech_duration_ms(text: str, *, floor: int = 850) -> int:
+    words = max(1, len(text.split()))
+    return max(floor, int(((words / 2.7) + 0.25) * 1000))
+
+
 def _quick_solve(text: str) -> Optional[Solved]:
     op = _detect_op(text)
     nums = _extract_numbers(text)
@@ -298,15 +303,17 @@ class MathSkill(Skill):
             await hands.close_all()
 
     async def _say_number_and_show(self, ctx: SkillContext, hands: Any, number: int, hand: str) -> None:
+        spoken = _num_word(number)
         await asyncio.gather(
-            ctx.speaker.say_as(_num_word(number), str(number)),
-            hands.show_number(number, hand),
+            ctx.speaker.say_as(spoken, str(number)),
+            hands.show_number(number, hand, duration_ms=_speech_duration_ms(spoken)),
         )
 
     async def _say_final_answer(self, ctx: SkillContext, hands: Any, result_int: int, result_str: str) -> None:
+        spoken = f"The answer is {_num_word(result_int)}!"
         tasks = [
-            ctx.speaker.say_as(f"The answer is {_num_word(result_int)}!", f"The answer is {result_str}!"),
-            hands.show_number(result_int, "right"),
+            ctx.speaker.say_as(spoken, f"The answer is {result_str}!"),
+            hands.show_number(result_int, "right", duration_ms=_speech_duration_ms(spoken, floor=1100)),
         ]
         if result_int <= 5 and hasattr(hands, "clear_hand"):
             tasks.append(hands.clear_hand("left"))
