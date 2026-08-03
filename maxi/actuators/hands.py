@@ -192,6 +192,12 @@ class HandsActuator:
         self._pose = {"left": [0] * 5, "right": [0] * 5}
         return bool(res and res.get("success"))
 
+    async def clear_hand(self, hand: str) -> bool:
+        res = await self._post("/clear_hands", {"hands": [hand]})
+        if hand in self._pose:
+            self._pose[hand] = [0] * 5
+        return bool(res and res.get("success"))
+
     async def emergency_stop(self) -> bool:
         res = await self._post("/emergency_stop")
         return bool(res and res.get("success"))

@@ -29,6 +29,7 @@ _WORD_NUMBERS = {
     "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
     "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
 }
+_NUMBER_WORDS = {v: k for k, v in _WORD_NUMBERS.items()}
 
 _OP_WORDS = {
     "+": ["plus", "add", "added to", "and", "sum of"],
@@ -134,6 +135,14 @@ def _num_str(v: Any) -> str:
         return str(int(f)) if f.is_integer() else str(v)
     except (TypeError, ValueError):
         return str(v)
+
+
+def _num_word(v: Any) -> str:
+    try:
+        i = int(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return _NUMBER_WORDS.get(i, str(i))
 
 
 def _quick_solve(text: str) -> Optional[Solved]:
@@ -250,32 +259,58 @@ class MathSkill(Skill):
         ))
 
         word = _OP_SPOKEN[s.op]
-        await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
 
         hands = ctx.hands
-        if can_count and hands:
-            await hands.show_number(s.a, "right")
-            await ctx.speaker.say(f"We start with {s.a}.")
-            if s.op == "+":
-                await ctx.speaker.say(f"Then we add {s.b} more.")
-            elif s.op == "-":
-                await ctx.speaker.say(f"Then we take {s.b} away.")
-            elif s.op == "*":
-                await ctx.speaker.say(f"That's {s.a}, {s.b} times.")
-            await hands.show_number(result_int, "right")
-        elif is_finger and hands:
-            await hands.show_number(result_int, "right")
 
-        await ctx.emit(events.emotion("happy"))
-        await ctx.speaker.say(f"The answer is {result_str}!")
-        if explanation:
-            await ctx.speaker.say(explanation)
+        if can_count and hands and s.op == "+" and s.a <= 5 and s.b <= 5 and result_int is not None:
+            await ctx.speaker.say("Let's work it out.")
+            await self._say_number_and_show(ctx, hands, s.a, "right")
+            await ctx.speaker.say("plus")
+            await self._say_number_and_show(ctx, hands, s.b, "left")
+            await ctx.emit(events.emotion("happy"))
+            await self._say_final_answer(ctx, hands, result_int, result_str)
+            if explanation:
+                await ctx.speaker.say(explanation)
+        else:
+            await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
+            if can_count and hands:
+                await hands.show_number(s.a, "right")
+                await ctx.speaker.say(f"We start with {s.a}.")
+                if s.op == "+":
+                    await ctx.speaker.say(f"Then we add {s.b} more.")
+                elif s.op == "-":
+                    await ctx.speaker.say(f"Then we take {s.b} away.")
+                elif s.op == "*":
+                    await ctx.speaker.say(f"That's {s.a}, {s.b} times.")
+                await hands.show_number(result_int, "right")
+            elif is_finger and hands:
+                await hands.show_number(result_int, "right")
+
+            await ctx.emit(events.emotion("happy"))
+            await ctx.speaker.say(f"The answer is {result_str}!")
+            if explanation:
+                await ctx.speaker.say(explanation)
 
         await ctx.memory.add_user(ctx.text)
         await ctx.memory.add_assistant(f"{s.a} {word} {s.b} equals {result_str}")
 
         if hands:
             await hands.close_all()
+
+    async def _say_number_and_show(self, ctx: SkillContext, hands: Any, number: int, hand: str) -> None:
+        await asyncio.gather(
+            ctx.speaker.say_as(_num_word(number), str(number)),
+            hands.show_number(number, hand),
+        )
+
+    async def _say_final_answer(self, ctx: SkillContext, hands: Any, result_int: int, result_str: str) -> None:
+        tasks = [
+            ctx.speaker.say_as(f"The answer is {_num_word(result_int)}!", f"The answer is {result_str}!"),
+            hands.show_number(result_int, "right"),
+        ]
+        if result_int <= 5 and hasattr(hands, "clear_hand"):
+            tasks.append(hands.clear_hand("left"))
+        await asyncio.gather(*tasks)
 
     def _explain(self, s: Solved, result_str: str) -> str:
         a, b = s.a, s.b
