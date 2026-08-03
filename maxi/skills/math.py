@@ -273,9 +273,9 @@ class MathSkill(Skill):
             await ctx.speaker.say("plus")
             await self._say_number_and_show(ctx, hands, s.b, "left")
             await ctx.emit(events.emotion("happy"))
-            await self._say_final_answer(ctx, hands, result_int, result_str)
             if explanation:
                 await ctx.speaker.say(explanation)
+            await self._say_final_answer(ctx, hands, result_int, result_str)
         else:
             await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
             if can_count and hands:
