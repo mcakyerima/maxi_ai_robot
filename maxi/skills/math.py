@@ -150,6 +150,10 @@ def _speech_duration_ms(text: str, *, floor: int = 500, scale: float = 0.72) -> 
     return max(floor, int((((words / 2.7) + 0.25) * 1000) * scale))
 
 
+def _speech_pause_seconds(text: str, *, floor: float = 0.35, scale: float = 0.45) -> float:
+    return max(floor, (((max(1, len(text.split())) / 2.7) + 0.25) * scale))
+
+
 def _quick_solve(text: str) -> Optional[Solved]:
     op = _detect_op(text)
     nums = _extract_numbers(text)
@@ -269,6 +273,7 @@ class MathSkill(Skill):
 
         if can_count and hands and s.op == "+" and s.a <= 5 and s.b <= 5 and result_int is not None:
             await ctx.speaker.say("Let's work it out.")
+            await asyncio.sleep(_speech_pause_seconds("Let's work it out."))
             await self._say_number_and_show(ctx, hands, s.a, "right")
             await ctx.speaker.say("plus")
             await self._say_number_and_show(ctx, hands, s.b, "left")
@@ -276,6 +281,7 @@ class MathSkill(Skill):
             if explanation:
                 await ctx.speaker.say(explanation)
             await self._say_final_answer(ctx, hands, result_int, result_str)
+            await asyncio.sleep(_speech_pause_seconds(f"The answer is {_num_word(result_int)}!", floor=0.55, scale=0.55))
             await hands.close_all()
         else:
             await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
@@ -307,14 +313,14 @@ class MathSkill(Skill):
         spoken = _num_word(number)
         await asyncio.gather(
             ctx.speaker.say_as(spoken, str(number)),
-            hands.show_number(number, hand, duration_ms=_speech_duration_ms(spoken)),
+            hands.show_number(number, hand, duration_ms=180),
         )
 
     async def _say_final_answer(self, ctx: SkillContext, hands: Any, result_int: int, result_str: str) -> None:
         spoken = f"The answer is {_num_word(result_int)}!"
         tasks = [
             ctx.speaker.say_as(spoken, f"The answer is {result_str}!"),
-            hands.show_number(result_int, "right", duration_ms=_speech_duration_ms(spoken, floor=650, scale=0.72)),
+            hands.show_number(result_int, "right", duration_ms=275),
         ]
         if result_int <= 5 and hasattr(hands, "clear_hand"):
             tasks.append(hands.clear_hand("left"))
