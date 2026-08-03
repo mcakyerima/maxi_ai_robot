@@ -276,6 +276,7 @@ class MathSkill(Skill):
             if explanation:
                 await ctx.speaker.say(explanation)
             await self._say_final_answer(ctx, hands, result_int, result_str)
+            await hands.close_all()
         else:
             await ctx.speaker.say(f"Let's work out {s.a} {word} {s.b}.")
             if can_count and hands:
